@@ -1,0 +1,73 @@
+<Window x:Class="AnlageEditor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Anlagen-Editor" Height="620" Width="1040">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="290"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Linkes Metadaten-Panel -->
+        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Background="#F3F3F3">
+            <StackPanel Margin="10">
+
+                <TextBlock Text="Werkzeuge" FontWeight="Bold" Margin="0,0,0,4"/>
+                <Border x:Name="ToolStation" Background="White" BorderBrush="#999999" BorderThickness="1"
+                        CornerRadius="4" Padding="8" Margin="0,0,0,14" Cursor="Hand"
+                        MouseLeftButtonDown="ToolStation_MouseLeftButtonDown">
+                    <StackPanel Orientation="Horizontal">
+                        <Rectangle Width="22" Height="16" RadiusX="3" RadiusY="3"
+                                   Stroke="Black" StrokeThickness="1" Fill="WhiteSmoke" Margin="0,0,8,0"/>
+                        <TextBlock Text="Station (auf Canvas ziehen)" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="Eigenschaften" FontWeight="Bold" Margin="0,0,0,4"/>
+                <StackPanel x:Name="PropPanel" IsEnabled="False">
+                    <TextBlock Text="Name"/>
+                    <TextBox x:Name="TxtPropName" IsReadOnly="True" Background="#EAEAEA"/>
+                    <TextBlock Text="µ (Erwartungswert)"/>
+                    <TextBox x:Name="TxtPropMu"/>
+                    <TextBlock Text="σ (Standardabweichung)"/>
+                    <TextBox x:Name="TxtPropSigma"/>
+                    <Button Content="Übernehmen" Margin="0,6,0,14" Click="PropUebernehmen_Click"/>
+                </StackPanel>
+
+                <TextBlock Text="Verbindung (Materialfluss)" FontWeight="Bold" Margin="0,0,0,4"/>
+                <TextBlock Text="von"/>
+                <TextBox x:Name="TxtVon"/>
+                <TextBlock Text="nach"/>
+                <TextBox x:Name="TxtNach"/>
+                <Button Content="Verbinden" Margin="0,6,0,14" Click="Verbinden_Click"/>
+
+                <TextBlock Text="Quelle(n) setzen" FontWeight="Bold" Margin="0,0,0,4"/>
+                <TextBlock Text="Name (mehrere mit Komma)"/>
+                <TextBox x:Name="TxtQuellen"/>
+                <Button Content="Als Quelle setzen" Margin="0,6,0,14" Click="Quellen_Click"/>
+
+                <TextBlock Text="Simulation" FontWeight="Bold" Margin="0,0,0,4"/>
+                <TextBlock Text="Wiederholungen R"/>
+                <TextBox x:Name="TxtR" Text="100"/>
+                <TextBlock Text="Teile je Lauf K"/>
+                <TextBox x:Name="TxtK" Text="200"/>
+                <TextBlock Text="Warm-up"/>
+                <TextBox x:Name="TxtWarmup" Text="50"/>
+                <TextBlock Text="Konfidenzniveau"/>
+                <TextBox x:Name="TxtNiveau" Text="0,99"/>
+                <Button Content="Simulieren" Margin="0,6,0,10" Click="Simulieren_Click"/>
+
+                <Border Background="White" BorderBrush="#CCCCCC" BorderThickness="1" Padding="6">
+                    <TextBlock x:Name="TxtErgebnis" TextWrapping="Wrap" Text="Noch kein Ergebnis."/>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Modellier-Canvas -->
+        <Border Grid.Column="1" BorderBrush="#CCCCCC" BorderThickness="1" Margin="6">
+            <Canvas x:Name="ModellCanvas" Background="White" ClipToBounds="True"
+                    AllowDrop="True" DragOver="ModellCanvas_DragOver" Drop="ModellCanvas_Drop"/>
+        </Border>
+    </Grid>
+</Window>

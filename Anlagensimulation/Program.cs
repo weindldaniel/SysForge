@@ -1,0 +1,58 @@
+using Anlagensimulation;
+
+// ---- Materialflussmodell aufbauen (Beispiel: serielle Linie S1..S5) ----
+var anlage = new Anlage();
+anlage.FuegeStationHinzu("S1", 5.0, 1.2);
+anlage.FuegeStationHinzu("S2", 6.0, 0.8);
+anlage.FuegeStationHinzu("S3", 4.0, 2.0);
+anlage.FuegeStationHinzu("S4", 7.0, 1.0);
+anlage.FuegeStationHinzu("S5", 3.0, 0.6);
+
+anlage.Verbinde("S1", "S2");
+anlage.Verbinde("S2", "S3");
+anlage.Verbinde("S3", "S4");
+anlage.Verbinde("S4", "S5");
+
+anlage.SetzeQuellen("S1");
+
+// Fuer parallelen Materialfluss z. B. eine zweite Maschine parallel zu S2:
+//   anlage.FuegeStationHinzu("S2b", 6.0, 0.8);
+//   anlage.Verbinde("S1", "S2b");
+//   anlage.Verbinde("S2b", "S3");
+
+// ---- Versuchsparameter ----
+int R = 100;    // Wiederholungen
+int K = 200;    // Teile je Lauf
+int warmup = 50;     // verworfene Teile (Einschwingphase)
+double niveau = 0.99;   // Konfidenzniveau
+int seed = 42;
+
+var sim = new Simulation(anlage);
+var rng = new Random(seed);
+
+// ---- R Wiederholungen: je Lauf die stationaere mittlere Taktzeit ----
+var laufMittel = new double[R];
+for (int r = 0; r < R; r++)
+{
+    double[] abgaenge = sim.SimuliereLauf(K, rng);
+    double[] takt = Simulation.Taktzeiten(abgaenge);
+
+    double summe = 0.0;
+    for (int i = warmup; i < takt.Length; i++)
+        summe += takt[i];
+    laufMittel[r] = summe / (takt.Length - warmup);
+}
+
+// ---- Ausgabe ----
+Console.WriteLine("Mittlere Taktzeit je Lauf:");
+for (int r = 0; r < R; r++)
+    Console.WriteLine($"  Lauf {r + 1,4} : {laufMittel[r]:0.0000}");
+Console.WriteLine(new string('-', 48));
+
+KonfidenzIntervall ki = Statistik.Konfidenzintervall(laufMittel, niveau);
+Console.WriteLine($"Wiederholungen R     : {R}");
+Console.WriteLine($"Konfidenzniveau      : {niveau:P0}");
+Console.WriteLine($"Mittelwert Taktzeit  : {ki.Mittelwert:0.0000}");
+Console.WriteLine($"t-Quantil (df={R - 1})   : {ki.TQuantil:0.0000}");
+Console.WriteLine($"Konfidenzintervall   : [ {ki.Untere:0.0000} ; {ki.Obere:0.0000} ]");
+Console.WriteLine($"Halbbreite           : {ki.Halbbreite:0.0000}");

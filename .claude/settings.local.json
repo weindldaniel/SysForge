@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet run *)",
+      "Bash(tasklist //FI \"IMAGENAME eq AnlagenEditor.exe\")",
+      "Bash(powershell -Command \"Get-Process AnlagenEditor -ErrorAction SilentlyContinue\")",
+      "Bash(powershell -Command \"Get-Process AnlagenEditor -ErrorAction SilentlyContinue | Select-Object Id\")",
+      "PowerShell(Stop-Process -Name \"AnlagenEditor\" -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(\"closed\")"
+    ]
+  }
+}

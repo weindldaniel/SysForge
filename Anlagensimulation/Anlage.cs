@@ -1,0 +1,47 @@
+namespace Anlagensimulation
+{
+    /// <summary>
+    /// Materialflussmodell als gerichteter Graph aus Stationen (Knoten) und
+    /// Flusskanten. Erlaubt beliebige Topologien: seriell, parallel, verzweigt.
+    /// Senken sind Knoten ohne Nachfolger.
+    /// </summary>
+    public class Anlage
+    {
+        private readonly Dictionary<string, Knoten> _knoten = new();
+        private readonly List<Knoten> _quellen = new();
+
+        public IReadOnlyCollection<Knoten> Knoten => _knoten.Values;
+        public IReadOnlyList<Knoten> Quellen => _quellen;
+
+        /// <summary>Fuegt eine Station mit Erwartungswert und Standardabweichung hinzu.</summary>
+        public Knoten FuegeStationHinzu(string name, double mu, double sigma)
+        {
+            var k = new Knoten(name, mu, sigma);
+            _knoten[name] = k;
+            return k;
+        }
+
+        /// <summary>Verbindet zwei Stationen mit einer gerichteten Flusskante.</summary>
+        public void Verbinde(string von, string nach)
+        {
+            Knoten a = _knoten[von];
+            Knoten b = _knoten[nach];
+            a.Nachfolger.Add(b);
+            b.Vorgaenger.Add(a);
+        }
+
+        /// <summary>Legt die Einspeisestationen fest (gesaettigte Quellen).</summary>
+        public void SetzeQuellen(params string[] namen)
+        {
+            _quellen.Clear();
+            foreach (string n in namen)
+                _quellen.Add(_knoten[n]);
+        }
+
+        public void Reset()
+        {
+            foreach (Knoten k in _knoten.Values)
+                k.Reset();
+        }
+    }
+}
