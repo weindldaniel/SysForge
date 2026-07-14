@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using Anlagensimulation;
 
@@ -30,6 +31,10 @@ public partial class MainWindow : Window
     private Point _ziehStartMaus;
     private Point _ziehStartBox;
     private bool _hatGezogen;
+
+    // ---- Materialfluss-Animation ----
+    private Ellipse? _materialToken;
+    private const double MillisekundenProStation = 700;
 
     private enum Modus { Auswahl, Verbinden, Quelle }
 
@@ -328,6 +333,62 @@ public partial class MainWindow : Window
         Melde($"Mittlere Taktzeit: {ki.Mittelwert:0.0000}\n" +
               $"KI ({niveau:P0}): [{ki.Untere:0.0000}; {ki.Obere:0.0000}]\n" +
               $"Halbbreite: {ki.Halbbreite:0.0000}");
+    }
+
+    // ---- Materialfluss-Visualisierung ----
+    private void MaterialflussAbspielen_Click(object sender, RoutedEventArgs e)
+    {
+        List<string> pfad = ErmittlePfad();
+        if (pfad.Count == 0) { Melde("Materialfluss: bitte zuerst eine Quelle setzen."); return; }
+        if (pfad.Count == 1) { Melde($"Materialfluss: {pfad[0]} hat keinen Nachfolger."); return; }
+
+        if (_materialToken is null)
+        {
+            _materialToken = new Ellipse
+            {
+                Width = 18,
+                Height = 18,
+                Fill = FarbeAkzent,
+                Stroke = Brushes.White,
+                StrokeThickness = 2,
+                IsHitTestVisible = false
+            };
+            Panel.SetZIndex(_materialToken, 100);
+        }
+        if (!ModellCanvas.Children.Contains(_materialToken))
+            ModellCanvas.Children.Add(_materialToken);
+
+        var animX = new DoubleAnimationUsingKeyFrames();
+        var animY = new DoubleAnimationUsingKeyFrames();
+        for (int i = 0; i < pfad.Count; i++)
+        {
+            Point p = _positionen[pfad[i]];
+            double mitteX = p.X + BoxBreite / 2 - _materialToken.Width / 2;
+            double mitteY = p.Y + BoxHoehe / 2 - _materialToken.Height / 2;
+            KeyTime zeit = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * MillisekundenProStation));
+            animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, zeit));
+            animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, zeit));
+        }
+
+        _materialToken.BeginAnimation(Canvas.LeftProperty, animX);
+        _materialToken.BeginAnimation(Canvas.TopProperty, animY);
+        Melde($"Materialfluss: {string.Join(" → ", pfad)}");
+    }
+
+    /// <summary>Folgt ab der ersten Quelle jeweils dem ersten Nachfolger bis zur Senke.</summary>
+    private List<string> ErmittlePfad()
+    {
+        var pfad = new List<string>();
+        if (_anlage.Quellen.Count == 0) return pfad;
+
+        var besucht = new HashSet<string>();
+        Knoten? aktuell = _anlage.Quellen[0];
+        while (aktuell is not null && besucht.Add(aktuell.Name))
+        {
+            pfad.Add(aktuell.Name);
+            aktuell = aktuell.Nachfolger.Count > 0 ? aktuell.Nachfolger[0] : null;
+        }
+        return pfad;
     }
 
     // ---- Zeichnen ----
