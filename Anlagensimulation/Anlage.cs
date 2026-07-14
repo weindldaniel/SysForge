@@ -38,6 +38,18 @@ namespace Anlagensimulation
                 _quellen.Add(_knoten[n]);
         }
 
+        /// <summary>Entfernt eine Station samt aller ein-/ausgehenden Flusskanten.</summary>
+        public void EntferneStation(string name)
+        {
+            if (!_knoten.TryGetValue(name, out Knoten? k)) return;
+
+            foreach (Knoten vorgaenger in k.Vorgaenger) vorgaenger.Nachfolger.Remove(k);
+            foreach (Knoten nachfolger in k.Nachfolger) nachfolger.Vorgaenger.Remove(k);
+
+            _knoten.Remove(name);
+            _quellen.Remove(k);
+        }
+
         public void Reset()
         {
             foreach (Knoten k in _knoten.Values)
