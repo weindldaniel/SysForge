@@ -16,18 +16,132 @@ public partial class MainWindow : Window
     private readonly Anlage _anlage = new();
     private readonly Dictionary<string, Point> _positionen = new();       // Name -> Boxposition
     private readonly Dictionary<string, Rectangle> _boxen = new();        // Name -> Rechteck (fuer Auswahl)
+    private readonly Dictionary<string, TextBlock> _beschriftungen = new(); // Name -> Namensbeschriftung
     private readonly Dictionary<string, TextBlock> _eigenschaften = new(); // Name -> Untertitel (µ/σ)
+    private readonly List<Verbindung> _verbindungen = new();
+    private readonly HashSet<string> _quellenNamen = new();               // Namen der aktuellen Quellen
     private int _stationsIndex = 0;
-    private string? _ausgewaehlt;   // aktuell selektierte Station
+    private string? _ausgewaehlt;    // aktuell selektierte Station (Modus Auswahl)
+    private string? _verbindenVon;   // erste angeklickte Station (Modus Verbinden)
+    private Modus _modus = Modus.Auswahl;
+
+    // ---- Ziehen (Verschieben einer Station) ----
+    private string? _ziehName;
+    private Point _ziehStartMaus;
+    private Point _ziehStartBox;
+    private bool _hatGezogen;
+
+    private enum Modus { Auswahl, Verbinden, Quelle }
+
+    private sealed record Verbindung(string Von, string Nach, Line Linie, Polygon Spitze);
 
     private const double BoxBreite = 90;
     private const double BoxHoehe = 56;
     private const double StandardMu = 5.0;
     private const double StandardSigma = 1.0;
 
+    // ---- Farbpalette (hellrot / hellgrau / weiss) ----
+    private static readonly Brush FarbeBoxFuellung = Brushes.White;
+    private static readonly Brush FarbeBoxRand = new SolidColorBrush(Color.FromRgb(0xD8, 0xD2, 0xD2));
+    private static readonly Brush FarbeAkzent = new SolidColorBrush(Color.FromRgb(0xE4, 0x73, 0x6B));
+    private static readonly Brush FarbeQuelleFuellung = new SolidColorBrush(Color.FromRgb(0xFB, 0xEA, 0xE8));
+    private static readonly Brush FarbeTextPrimaer = new SolidColorBrush(Color.FromRgb(0x3A, 0x35, 0x35));
+    private static readonly Brush FarbeTextSekundaer = new SolidColorBrush(Color.FromRgb(0x94, 0x8C, 0x8C));
+    private static readonly Brush FarbePfeil = new SolidColorBrush(Color.FromRgb(0xAE, 0xA6, 0xA6));
+
     public MainWindow()
     {
         InitializeComponent();
+        RbModusAuswahl.IsChecked = true;   // loest Modus_Checked aus (Namen sind jetzt initialisiert)
+    }
+
+    // ---- Klickmodus ----
+    private void Modus_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_verbindenVon is not null)
+        {
+            AktualisiereBoxRand(_verbindenVon);
+            _verbindenVon = null;
+        }
+
+        _modus = sender switch
+        {
+            _ when ReferenceEquals(sender, RbModusVerbinden) => Modus.Verbinden,
+            _ when ReferenceEquals(sender, RbModusQuelle) => Modus.Quelle,
+            _ => Modus.Auswahl
+        };
+        Melde(NachrichtFuerModus(_modus));
+    }
+
+    private static string NachrichtFuerModus(Modus modus) => modus switch
+    {
+        Modus.Verbinden => "Verbinden: Startstation anklicken, danach Zielstation.",
+        Modus.Quelle => "Quelle: Station anklicken, um sie ein-/auszuschalten.",
+        _ => "Auswählen: Station anklicken für Eigenschaften, ziehen zum Verschieben."
+    };
+
+    private void StationKlick(string name)
+    {
+        switch (_modus)
+        {
+            case Modus.Verbinden: KlickVerbinden(name); break;
+            case Modus.Quelle: KlickQuelle(name); break;
+            default: WaehleStation(name); break;
+        }
+    }
+
+    private void KlickVerbinden(string name)
+    {
+        if (_verbindenVon is null)
+        {
+            _verbindenVon = name;
+            _boxen[name].Stroke = FarbeAkzent;
+            _boxen[name].StrokeThickness = 2.5;
+            Melde($"Verbinden: {name} → ? (Zielstation anklicken)");
+            return;
+        }
+
+        if (_verbindenVon == name)
+        {
+            AktualisiereBoxRand(name);
+            _verbindenVon = null;
+            Melde("Verbindung abgebrochen.");
+            return;
+        }
+
+        string von = _verbindenVon;
+        _anlage.Verbinde(von, name);
+        ZeichnePfeil(von, name);
+        AktualisiereBoxRand(von);
+        _verbindenVon = null;
+        Melde($"Verbindung {von} → {name} gesetzt.");
+    }
+
+    private void KlickQuelle(string name)
+    {
+        if (_quellenNamen.Contains(name))
+        {
+            _quellenNamen.Remove(name);
+            _boxen[name].Fill = FarbeBoxFuellung;
+        }
+        else
+        {
+            _quellenNamen.Add(name);
+            _boxen[name].Fill = FarbeQuelleFuellung;
+        }
+
+        _anlage.SetzeQuellen(_quellenNamen.ToArray());
+        Melde(_quellenNamen.Count == 0
+            ? "Keine Quelle gesetzt."
+            : $"Quelle(n): {string.Join(", ", _quellenNamen)}");
+    }
+
+    private void AktualisiereBoxRand(string name)
+    {
+        Rectangle r = _boxen[name];
+        bool istAusgewaehlt = name == _ausgewaehlt;
+        r.Stroke = istAusgewaehlt ? FarbeAkzent : FarbeBoxRand;
+        r.StrokeThickness = istAusgewaehlt ? 2.5 : 1.5;
     }
 
     // ---- Werkzeug: Station per Drag-and-Drop aus der Toolbox ----
@@ -73,14 +187,14 @@ public partial class MainWindow : Window
     {
         if (_ausgewaehlt is not null && _boxen.TryGetValue(_ausgewaehlt, out Rectangle? alt))
         {
-            alt.Stroke = Brushes.Black;
+            alt.Stroke = FarbeBoxRand;
             alt.StrokeThickness = 1.5;
         }
 
         _ausgewaehlt = name;
         Rectangle rechteck = _boxen[name];
-        rechteck.Stroke = Brushes.RoyalBlue;
-        rechteck.StrokeThickness = 3;
+        rechteck.Stroke = FarbeAkzent;
+        rechteck.StrokeThickness = 2.5;
 
         Knoten k = _anlage.Knoten.First(n => n.Name == name);
         TxtPropName.Text = k.Name;
@@ -103,31 +217,85 @@ public partial class MainWindow : Window
         Melde($"Station {_ausgewaehlt}: µ={mu}, σ={sigma} übernommen.");
     }
 
-    private void Verbinden_Click(object sender, RoutedEventArgs e)
+    private void StationLoeschen_Click(object sender, RoutedEventArgs e)
     {
-        string von = TxtVon.Text.Trim();
-        string nach = TxtNach.Text.Trim();
-        if (!_positionen.ContainsKey(von) || !_positionen.ContainsKey(nach))
+        if (_ausgewaehlt is null) { Melde("Keine Station ausgewählt."); return; }
+        string name = _ausgewaehlt;
+
+        foreach (Verbindung v in _verbindungen.Where(v => v.Von == name || v.Nach == name).ToList())
         {
-            Melde("von/nach: Station unbekannt."); return;
+            ModellCanvas.Children.Remove(v.Linie);
+            ModellCanvas.Children.Remove(v.Spitze);
+            _verbindungen.Remove(v);
         }
-        _anlage.Verbinde(von, nach);
-        ZeichnePfeil(_positionen[von], _positionen[nach]);
-        Melde($"Verbindung {von} \u2192 {nach} gesetzt.");
-        TxtVon.Clear(); TxtNach.Clear();
+
+        ModellCanvas.Children.Remove(_boxen[name]);
+        ModellCanvas.Children.Remove(_beschriftungen[name]);
+        ModellCanvas.Children.Remove(_eigenschaften[name]);
+
+        _boxen.Remove(name);
+        _beschriftungen.Remove(name);
+        _eigenschaften.Remove(name);
+        _positionen.Remove(name);
+        _quellenNamen.Remove(name);
+        _anlage.EntferneStation(name);
+
+        _ausgewaehlt = null;
+        PropPanel.IsEnabled = false;
+        TxtPropName.Text = TxtPropMu.Text = TxtPropSigma.Text = string.Empty;
+
+        Melde($"Station {name} gelöscht.");
     }
 
-    private void Quellen_Click(object sender, RoutedEventArgs e)
+    // ---- Verschieben einer Station ----
+    private void StationMouseDown(string name, Rectangle rect, MouseButtonEventArgs e)
     {
-        string[] namen = TxtQuellen.Text.Split(
-            ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (namen.Length == 0) { Melde("Keine Quelle angegeben."); return; }
-        foreach (string n in namen)
-            if (!_positionen.ContainsKey(n)) { Melde($"Station {n} unbekannt."); return; }
+        _ziehName = name;
+        _hatGezogen = false;
+        _ziehStartMaus = e.GetPosition(ModellCanvas);
+        _ziehStartBox = _positionen[name];
+        rect.CaptureMouse();
+        e.Handled = true;
+    }
 
-        _anlage.SetzeQuellen(namen);
-        foreach (string n in namen) MarkiereQuelle(_positionen[n]);
-        Melde($"Quelle(n): {string.Join(", ", namen)}");
+    private void StationMouseMove(string name, MouseEventArgs e)
+    {
+        if (_ziehName != name || e.LeftButton != MouseButtonState.Pressed) return;
+
+        Vector delta = e.GetPosition(ModellCanvas) - _ziehStartMaus;
+        if (!_hatGezogen && delta.Length < 4) return;
+        _hatGezogen = true;
+
+        double x = Math.Max(0, _ziehStartBox.X + delta.X);
+        double y = Math.Max(0, _ziehStartBox.Y + delta.Y);
+        VersetzeBox(name, x, y);
+    }
+
+    private void StationMouseUp(string name, Rectangle rect, MouseButtonEventArgs e)
+    {
+        if (_ziehName != name) return;
+        rect.ReleaseMouseCapture();
+        _ziehName = null;
+        e.Handled = true;
+
+        if (_hatGezogen) Melde($"Station {name} verschoben.");
+        else StationKlick(name);
+    }
+
+    private void VersetzeBox(string name, double x, double y)
+    {
+        _positionen[name] = new Point(x, y);
+
+        Canvas.SetLeft(_boxen[name], x);
+        Canvas.SetTop(_boxen[name], y);
+        Canvas.SetLeft(_beschriftungen[name], x);
+        Canvas.SetTop(_beschriftungen[name], y + 6);
+        Canvas.SetLeft(_eigenschaften[name], x);
+        Canvas.SetTop(_eigenschaften[name], y + BoxHoehe - 20);
+
+        foreach (Verbindung v in _verbindungen)
+            if (v.Von == name || v.Nach == name)
+                AktualisierePfeil(v);
     }
 
     private void Simulieren_Click(object sender, RoutedEventArgs e)
@@ -171,13 +339,15 @@ public partial class MainWindow : Window
             Height = BoxHoehe,
             RadiusX = 6,
             RadiusY = 6,
-            Stroke = Brushes.Black,
+            Stroke = FarbeBoxRand,
             StrokeThickness = 1.5,
-            Fill = Brushes.WhiteSmoke,
+            Fill = FarbeBoxFuellung,
             Cursor = Cursors.Hand,
             Tag = name
         };
-        rect.MouseLeftButtonDown += (_, e) => { WaehleStation(name); e.Handled = true; };
+        rect.MouseLeftButtonDown += (_, e) => StationMouseDown(name, rect, e);
+        rect.MouseMove += (_, e) => StationMouseMove(name, e);
+        rect.MouseLeftButtonUp += (_, e) => StationMouseUp(name, rect, e);
         Canvas.SetLeft(rect, x);
         Canvas.SetTop(rect, y);
         ModellCanvas.Children.Add(rect);
@@ -186,7 +356,8 @@ public partial class MainWindow : Window
         var label = new TextBlock
         {
             Text = name,
-            FontWeight = FontWeights.Bold,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = FarbeTextPrimaer,
             Width = BoxBreite,
             TextAlignment = TextAlignment.Center,
             IsHitTestVisible = false
@@ -194,13 +365,14 @@ public partial class MainWindow : Window
         Canvas.SetLeft(label, x);
         Canvas.SetTop(label, y + 6);
         ModellCanvas.Children.Add(label);
+        _beschriftungen[name] = label;
 
         Knoten k = _anlage.Knoten.First(n => n.Name == name);
         var untertitel = new TextBlock
         {
             Text = FormatiereEigenschaften(k),
             FontSize = 10,
-            Foreground = Brushes.DimGray,
+            Foreground = FarbeTextSekundaer,
             Width = BoxBreite,
             TextAlignment = TextAlignment.Center,
             IsHitTestVisible = false
@@ -214,37 +386,29 @@ public partial class MainWindow : Window
     private static string FormatiereEigenschaften(Knoten k) =>
         $"µ={k.Mu:0.##}  σ={k.Sigma:0.##}";
 
-    private void MarkiereQuelle(Point p)
+    private void ZeichnePfeil(string von, string nach)
     {
-        var rahmen = new Rectangle
-        {
-            Width = BoxBreite,
-            Height = BoxHoehe,
-            RadiusX = 6,
-            RadiusY = 6,
-            Stroke = Brushes.SeaGreen,
-            StrokeThickness = 3,
-            Fill = Brushes.Transparent
-        };
-        Canvas.SetLeft(rahmen, p.X);
-        Canvas.SetTop(rahmen, p.Y);
-        ModellCanvas.Children.Add(rahmen);
+        var (x1, y1, x2, y2, spitzenPunkte) = PfeilGeometrie(_positionen[von], _positionen[nach]);
+        var linie = new Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = FarbePfeil, StrokeThickness = 1.5 };
+        var spitze = new Polygon { Points = spitzenPunkte, Fill = FarbePfeil };
+        ModellCanvas.Children.Add(linie);
+        ModellCanvas.Children.Add(spitze);
+        _verbindungen.Add(new Verbindung(von, nach, linie, spitze));
     }
 
-    private void ZeichnePfeil(Point von, Point nach)
+    private void AktualisierePfeil(Verbindung v)
+    {
+        var (x1, y1, x2, y2, spitzenPunkte) = PfeilGeometrie(_positionen[v.Von], _positionen[v.Nach]);
+        v.Linie.X1 = x1; v.Linie.Y1 = y1; v.Linie.X2 = x2; v.Linie.Y2 = y2;
+        v.Spitze.Points = spitzenPunkte;
+    }
+
+    private static (double x1, double y1, double x2, double y2, PointCollection spitze) PfeilGeometrie(Point von, Point nach)
     {
         double x1 = von.X + BoxBreite;
         double y1 = von.Y + BoxHoehe / 2;
         double x2 = nach.X;
         double y2 = nach.Y + BoxHoehe / 2;
-
-        var linie = new Line
-        {
-            X1 = x1, Y1 = y1, X2 = x2, Y2 = y2,
-            Stroke = Brushes.Black,
-            StrokeThickness = 1.5
-        };
-        ModellCanvas.Children.Add(linie);
 
         // Einfache Pfeilspitze am Ziel.
         double winkel = Math.Atan2(y2 - y1, x2 - x1);
@@ -253,12 +417,8 @@ public partial class MainWindow : Window
                            y2 - laenge * Math.Sin(winkel - Math.PI / 6));
         var p2 = new Point(x2 - laenge * Math.Cos(winkel + Math.PI / 6),
                            y2 - laenge * Math.Sin(winkel + Math.PI / 6));
-        var spitze = new Polygon
-        {
-            Points = new PointCollection { new Point(x2, y2), p1, p2 },
-            Fill = Brushes.Black
-        };
-        ModellCanvas.Children.Add(spitze);
+
+        return (x1, y1, x2, y2, new PointCollection { new Point(x2, y2), p1, p2 });
     }
 
     // ---- Hilfen ----
