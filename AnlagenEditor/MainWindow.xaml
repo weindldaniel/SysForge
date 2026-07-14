@@ -222,6 +222,13 @@
 
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
+                        <TextBlock Text="Materialfluss" Style="{StaticResource SectionHeader}"/>
+                        <Button Content="▶ Abspielen" Click="MaterialflussAbspielen_Click"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
                         <TextBlock Text="Simulation" Style="{StaticResource SectionHeader}"/>
                         <TextBlock Text="Wiederholungen R" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="TxtR" Text="100"/>

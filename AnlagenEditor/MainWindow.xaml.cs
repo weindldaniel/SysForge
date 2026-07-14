@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using Anlagensimulation;
 
@@ -30,6 +31,11 @@ public partial class MainWindow : Window
     private Point _ziehStartMaus;
     private Point _ziehStartBox;
     private bool _hatGezogen;
+
+    // ---- Materialfluss-Animation ----
+    private readonly List<Ellipse> _materialTokens = new();
+    private const double MillisekundenProStation = 700;
+    private const int MaxFaeden = 200;   // Schutz vor Explosion bei stark verzweigten/zyklischen Graphen
 
     private enum Modus { Auswahl, Verbinden, Quelle }
 
@@ -328,6 +334,94 @@ public partial class MainWindow : Window
         Melde($"Mittlere Taktzeit: {ki.Mittelwert:0.0000}\n" +
               $"KI ({niveau:P0}): [{ki.Untere:0.0000}; {ki.Obere:0.0000}]\n" +
               $"Halbbreite: {ki.Halbbreite:0.0000}");
+    }
+
+    // ---- Materialfluss-Visualisierung ----
+    private void MaterialflussAbspielen_Click(object sender, RoutedEventArgs e)
+    {
+        if (_anlage.Quellen.Count == 0) { Melde("Materialfluss: bitte zuerst eine Quelle setzen."); return; }
+
+        List<List<string>> faeden = ErmittleAlleFaeden();
+
+        foreach (Ellipse alterToken in _materialTokens) ModellCanvas.Children.Remove(alterToken);
+        _materialTokens.Clear();
+
+        int animiert = 0;
+        foreach (List<string> faden in faeden)
+        {
+            if (faden.Count < 2) continue;   // Quelle ohne Nachfolger: nichts zu bewegen
+
+            var token = new Ellipse
+            {
+                Width = 18,
+                Height = 18,
+                Fill = FarbeAkzent,
+                Stroke = Brushes.White,
+                StrokeThickness = 2,
+                IsHitTestVisible = false
+            };
+            Panel.SetZIndex(token, 100);
+            ModellCanvas.Children.Add(token);
+            _materialTokens.Add(token);
+
+            var animX = new DoubleAnimationUsingKeyFrames();
+            var animY = new DoubleAnimationUsingKeyFrames();
+            for (int i = 0; i < faden.Count; i++)
+            {
+                Point p = _positionen[faden[i]];
+                double mitteX = p.X + BoxBreite / 2 - token.Width / 2;
+                double mitteY = p.Y + BoxHoehe / 2 - token.Height / 2;
+                KeyTime zeit = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * MillisekundenProStation));
+                animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, zeit));
+                animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, zeit));
+            }
+
+            token.BeginAnimation(Canvas.LeftProperty, animX);
+            token.BeginAnimation(Canvas.TopProperty, animY);
+            animiert++;
+        }
+
+        Melde(animiert == 0
+            ? "Materialfluss: keine Quelle hat einen Nachfolger."
+            : $"Materialfluss: {animiert} parallele(r) Pfad(e) animiert.");
+    }
+
+    /// <summary>
+    /// Ermittelt ab jeder Quelle alle Pfade bis zur jeweiligen Senke; an Stationen mit
+    /// mehreren Nachfolgern spaltet sich ein Pfad in mehrere auf (Verzweigung). Ein Pfad
+    /// endet auch, sobald er eine Station ein zweites Mal erreichen wuerde (Zyklusschutz).
+    /// </summary>
+    private List<List<string>> ErmittleAlleFaeden()
+    {
+        var faeden = new List<List<string>>();
+        foreach (Knoten quelle in _anlage.Quellen)
+        {
+            if (faeden.Count >= MaxFaeden) break;
+            SammleFaeden(quelle, new List<string>(), faeden);
+        }
+        return faeden;
+    }
+
+    private static void SammleFaeden(Knoten aktuell, List<string> pfadBisher, List<List<string>> faeden)
+    {
+        if (faeden.Count >= MaxFaeden) return;
+
+        if (pfadBisher.Contains(aktuell.Name))
+        {
+            faeden.Add(pfadBisher);
+            return;
+        }
+
+        var pfad = new List<string>(pfadBisher) { aktuell.Name };
+
+        if (aktuell.Nachfolger.Count == 0)
+        {
+            faeden.Add(pfad);
+            return;
+        }
+
+        foreach (Knoten nachfolger in aktuell.Nachfolger)
+            SammleFaeden(nachfolger, pfad, faeden);
     }
 
     // ---- Zeichnen ----
