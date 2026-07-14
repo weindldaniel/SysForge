@@ -33,8 +33,9 @@ public partial class MainWindow : Window
     private bool _hatGezogen;
 
     // ---- Materialfluss-Animation ----
-    private Ellipse? _materialToken;
+    private readonly List<Ellipse> _materialTokens = new();
     private const double MillisekundenProStation = 700;
+    private const int MaxFaeden = 200;   // Schutz vor Explosion bei stark verzweigten/zyklischen Graphen
 
     private enum Modus { Auswahl, Verbinden, Quelle }
 
@@ -338,13 +339,19 @@ public partial class MainWindow : Window
     // ---- Materialfluss-Visualisierung ----
     private void MaterialflussAbspielen_Click(object sender, RoutedEventArgs e)
     {
-        List<string> pfad = ErmittlePfad();
-        if (pfad.Count == 0) { Melde("Materialfluss: bitte zuerst eine Quelle setzen."); return; }
-        if (pfad.Count == 1) { Melde($"Materialfluss: {pfad[0]} hat keinen Nachfolger."); return; }
+        if (_anlage.Quellen.Count == 0) { Melde("Materialfluss: bitte zuerst eine Quelle setzen."); return; }
 
-        if (_materialToken is null)
+        List<List<string>> faeden = ErmittleAlleFaeden();
+
+        foreach (Ellipse alterToken in _materialTokens) ModellCanvas.Children.Remove(alterToken);
+        _materialTokens.Clear();
+
+        int animiert = 0;
+        foreach (List<string> faden in faeden)
         {
-            _materialToken = new Ellipse
+            if (faden.Count < 2) continue;   // Quelle ohne Nachfolger: nichts zu bewegen
+
+            var token = new Ellipse
             {
                 Width = 18,
                 Height = 18,
@@ -353,42 +360,68 @@ public partial class MainWindow : Window
                 StrokeThickness = 2,
                 IsHitTestVisible = false
             };
-            Panel.SetZIndex(_materialToken, 100);
-        }
-        if (!ModellCanvas.Children.Contains(_materialToken))
-            ModellCanvas.Children.Add(_materialToken);
+            Panel.SetZIndex(token, 100);
+            ModellCanvas.Children.Add(token);
+            _materialTokens.Add(token);
 
-        var animX = new DoubleAnimationUsingKeyFrames();
-        var animY = new DoubleAnimationUsingKeyFrames();
-        for (int i = 0; i < pfad.Count; i++)
-        {
-            Point p = _positionen[pfad[i]];
-            double mitteX = p.X + BoxBreite / 2 - _materialToken.Width / 2;
-            double mitteY = p.Y + BoxHoehe / 2 - _materialToken.Height / 2;
-            KeyTime zeit = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * MillisekundenProStation));
-            animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, zeit));
-            animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, zeit));
+            var animX = new DoubleAnimationUsingKeyFrames();
+            var animY = new DoubleAnimationUsingKeyFrames();
+            for (int i = 0; i < faden.Count; i++)
+            {
+                Point p = _positionen[faden[i]];
+                double mitteX = p.X + BoxBreite / 2 - token.Width / 2;
+                double mitteY = p.Y + BoxHoehe / 2 - token.Height / 2;
+                KeyTime zeit = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * MillisekundenProStation));
+                animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, zeit));
+                animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, zeit));
+            }
+
+            token.BeginAnimation(Canvas.LeftProperty, animX);
+            token.BeginAnimation(Canvas.TopProperty, animY);
+            animiert++;
         }
 
-        _materialToken.BeginAnimation(Canvas.LeftProperty, animX);
-        _materialToken.BeginAnimation(Canvas.TopProperty, animY);
-        Melde($"Materialfluss: {string.Join(" → ", pfad)}");
+        Melde(animiert == 0
+            ? "Materialfluss: keine Quelle hat einen Nachfolger."
+            : $"Materialfluss: {animiert} parallele(r) Pfad(e) animiert.");
     }
 
-    /// <summary>Folgt ab der ersten Quelle jeweils dem ersten Nachfolger bis zur Senke.</summary>
-    private List<string> ErmittlePfad()
+    /// <summary>
+    /// Ermittelt ab jeder Quelle alle Pfade bis zur jeweiligen Senke; an Stationen mit
+    /// mehreren Nachfolgern spaltet sich ein Pfad in mehrere auf (Verzweigung). Ein Pfad
+    /// endet auch, sobald er eine Station ein zweites Mal erreichen wuerde (Zyklusschutz).
+    /// </summary>
+    private List<List<string>> ErmittleAlleFaeden()
     {
-        var pfad = new List<string>();
-        if (_anlage.Quellen.Count == 0) return pfad;
-
-        var besucht = new HashSet<string>();
-        Knoten? aktuell = _anlage.Quellen[0];
-        while (aktuell is not null && besucht.Add(aktuell.Name))
+        var faeden = new List<List<string>>();
+        foreach (Knoten quelle in _anlage.Quellen)
         {
-            pfad.Add(aktuell.Name);
-            aktuell = aktuell.Nachfolger.Count > 0 ? aktuell.Nachfolger[0] : null;
+            if (faeden.Count >= MaxFaeden) break;
+            SammleFaeden(quelle, new List<string>(), faeden);
         }
-        return pfad;
+        return faeden;
+    }
+
+    private static void SammleFaeden(Knoten aktuell, List<string> pfadBisher, List<List<string>> faeden)
+    {
+        if (faeden.Count >= MaxFaeden) return;
+
+        if (pfadBisher.Contains(aktuell.Name))
+        {
+            faeden.Add(pfadBisher);
+            return;
+        }
+
+        var pfad = new List<string>(pfadBisher) { aktuell.Name };
+
+        if (aktuell.Nachfolger.Count == 0)
+        {
+            faeden.Add(pfad);
+            return;
+        }
+
+        foreach (Knoten nachfolger in aktuell.Nachfolger)
+            SammleFaeden(nachfolger, pfad, faeden);
     }
 
     // ---- Zeichnen ----
