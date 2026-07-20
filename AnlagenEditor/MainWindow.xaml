@@ -4,168 +4,6 @@
         Title="Anlagen-Editor" Height="760" Width="1500"
         Background="#F7F8F8" FontFamily="Segoe UI">
 
-    <!-- Farbgebung Anwendung: RAL 3002 (Rot), RAL 9006 (Grau), RAL 7024 (Dunkelgrau-Blau) -->
-    <Window.Resources>
-        <SolidColorBrush x:Key="BgApp" Color="#F7F8F8"/>
-        <SolidColorBrush x:Key="BgCard" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="BorderGray" Color="#E4E4E4"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#45494E"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#787878"/>
-        <SolidColorBrush x:Key="AccentRed" Color="#B20B10"/>
-        <SolidColorBrush x:Key="AccentRedDark" Color="#8F090E"/>
-        <SolidColorBrush x:Key="AccentRedLight" Color="#F7E3E3"/>
-        <SolidColorBrush x:Key="AccentRedBorder" Color="#E4AAAB"/>
-
-        <Style x:Key="SectionHeader" TargetType="TextBlock">
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
-        </Style>
-
-        <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-            <Setter Property="Margin" Value="0,0,0,3"/>
-        </Style>
-
-        <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource BgCard}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderGray}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="14"/>
-            <Setter Property="Margin" Value="0,0,0,14"/>
-        </Style>
-
-        <Style TargetType="TextBox">
-            <Setter Property="Padding" Value="7,6"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderGray}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="5">
-                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentRed}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgApp}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource AccentRed}"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Padding" Value="10,8"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Margin" Value="0,4,0,14"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentRedDark}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentRedDark}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource BgCard}"/>
-            <Setter Property="Foreground" Value="{StaticResource AccentRedDark}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Padding" Value="10,8"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Margin" Value="0,8,0,0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                BorderBrush="{StaticResource AccentRedBorder}" BorderThickness="1" CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentRedLight}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="ToolboxItem" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource BgCard}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderGray}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="Padding" Value="10,9"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AccentRedLight}"/>
-                    <Setter Property="BorderBrush" Value="{StaticResource AccentRedBorder}"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="ModusToggle" TargetType="RadioButton">
-            <Setter Property="Padding" Value="0,7"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Bd" Background="{StaticResource BgApp}" BorderBrush="{StaticResource BorderGray}"
-                                BorderThickness="1" CornerRadius="5" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentRed}"/>
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentRed}"/>
-                                <Setter Property="Foreground" Value="White"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentRedBorder}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
-
     <Grid Margin="12">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="300"/>
@@ -178,6 +16,15 @@
         <!-- Linkes Metadaten-Panel -->
         <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="System" Style="{StaticResource SectionHeader}"/>
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"
+                                   Text="Ziel, Level und Systeminformationen werden oben über dem Canvas angezeigt."/>
+                        <Button Content="Neues System anlegen" Click="NeuesSystemAnlegen_Click"/>
+                    </StackPanel>
+                </Border>
 
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
@@ -227,6 +74,10 @@
                         <TextBox x:Name="TxtPropMu"/>
                         <TextBlock Text="σ (Standardabweichung)" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="TxtPropSigma"/>
+
+                        <TextBlock Text="Systeminformationen (Level-abhängig)" Style="{StaticResource SectionHeader}" FontSize="12" Margin="4,4,0,10"/>
+                        <StackPanel x:Name="PanelSystemelementInfo"/>
+
                         <Button Content="Übernehmen" Margin="0,4,0,0" Click="PropUebernehmen_Click"/>
                         <Button Content="Löschen" Style="{StaticResource SecondaryButton}" Click="StationLoeschen_Click"/>
                     </StackPanel>
@@ -241,28 +92,6 @@
 
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
-                        <TextBlock Text="Simulation" Style="{StaticResource SectionHeader}"/>
-
-                        <TextBlock Text="Wiederholungen R" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="TxtR" Text="100"/>
-                        <TextBlock Style="{StaticResource FieldLabel}" FontStyle="Italic" TextWrapping="Wrap" Margin="0,-6,0,10"
-                                   Text="Anzahl unabhängiger Simulationsläufe. Aus den R Lauf-Mittelwerten der Taktzeit wird das Konfidenzintervall berechnet – mehr Läufe verkleinern die Halbbreite."/>
-
-                        <TextBlock Text="Teile je Lauf K" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="TxtK" Text="200"/>
-                        <TextBlock Style="{StaticResource FieldLabel}" FontStyle="Italic" TextWrapping="Wrap" Margin="0,-6,0,10"
-                                   Text="Anzahl simulierter Werkstücke je Lauf. Davon werden die ersten „Warm-up“ Taktzeiten verworfen; aus den übrigen K − Warm-up wird der Lauf-Mittelwert gebildet."/>
-
-                        <TextBlock Text="Warm-up" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="TxtWarmup" Text="50"/>
-                        <TextBlock Text="Konfidenzniveau" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="TxtNiveau" Text="0,99"/>
-                        <Button Content="Simulieren" Margin="0,4,0,0" Click="Simulieren_Click"/>
-                    </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
                         <TextBlock Text="Status" Style="{StaticResource SectionHeader}"/>
                         <TextBlock x:Name="TxtErgebnis" TextWrapping="Wrap" Text="Bereit."
                                    Foreground="{StaticResource TextSecondary}" FontSize="12"/>
@@ -272,18 +101,69 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Modellier-Canvas -->
-        <Border Grid.Column="2" Background="{StaticResource BgCard}"
-                BorderBrush="{StaticResource BorderGray}" BorderThickness="1" CornerRadius="8">
-            <Canvas x:Name="ModellCanvas" Background="Transparent" ClipToBounds="True"
-                    AllowDrop="True" DragOver="ModellCanvas_DragOver" Drop="ModellCanvas_Drop"/>
-        </Border>
+        <!-- Mitte: System-Header + Modellier-Canvas -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- System-Header: Zielbeschreibung, Level und Meta-Systeminformationen (Kapitel 4.1.5) -->
+            <Border Grid.Row="0" Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderGray}"
+                    BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="TxtHeaderTitel" Grid.Column="0" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}" Text="Kein System angelegt"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="TxtHeaderZielLevel" Grid.Column="1" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{StaticResource AccentRed}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    </Grid>
+                    <TextBlock x:Name="TxtHeaderHinweis" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"
+                               Foreground="{StaticResource TextSecondary}"
+                               Text="Über „Neues System anlegen“ links Zielbeschreibung, Level und Systeminformationen erfassen."/>
+                    <WrapPanel x:Name="PanelHeaderFelder" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Modellier-Canvas -->
+            <Border Grid.Row="2" Background="{StaticResource BgCard}"
+                    BorderBrush="{StaticResource BorderGray}" BorderThickness="1" CornerRadius="8">
+                <Canvas x:Name="ModellCanvas" Background="Transparent" ClipToBounds="True"
+                        AllowDrop="True" DragOver="ModellCanvas_DragOver" Drop="ModellCanvas_Drop"/>
+            </Border>
+        </Grid>
 
         <!-- Ergebnis-Panel (Stufe 1: Stationszeiten, Stufe 2: Gesamtanlagen-Taktzeit) -->
         <Border Grid.Column="4" Background="{StaticResource BgCard}"
                 BorderBrush="{StaticResource BorderGray}" BorderThickness="1" CornerRadius="8" Padding="16">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
+                    <TextBlock Text="Simulation" Style="{StaticResource SectionHeader}"/>
+
+                    <TextBlock Text="Wiederholungen R" Style="{StaticResource FieldLabel}"/>
+                    <TextBox x:Name="TxtR" Text="100"/>
+                    <TextBlock Style="{StaticResource FieldLabel}" FontStyle="Italic" TextWrapping="Wrap" Margin="0,-6,0,10"
+                               Text="Anzahl unabhängiger Simulationsläufe. Aus den R Lauf-Mittelwerten der Taktzeit wird das Konfidenzintervall berechnet – mehr Läufe verkleinern die Halbbreite."/>
+
+                    <TextBlock Text="Teile je Lauf K" Style="{StaticResource FieldLabel}"/>
+                    <TextBox x:Name="TxtK" Text="200"/>
+                    <TextBlock Style="{StaticResource FieldLabel}" FontStyle="Italic" TextWrapping="Wrap" Margin="0,-6,0,10"
+                               Text="Anzahl simulierter Werkstücke je Lauf. Davon werden die ersten „Warm-up“ Taktzeiten verworfen; aus den übrigen K − Warm-up wird der Lauf-Mittelwert gebildet."/>
+
+                    <TextBlock Text="Warm-up" Style="{StaticResource FieldLabel}"/>
+                    <TextBox x:Name="TxtWarmup" Text="50"/>
+                    <TextBlock Text="Konfidenzniveau" Style="{StaticResource FieldLabel}"/>
+                    <TextBox x:Name="TxtNiveau" Text="0,99"/>
+                    <Button Content="Simulieren" Margin="0,4,0,14" Click="Simulieren_Click"/>
+
+                    <Border BorderBrush="{StaticResource BorderGray}" BorderThickness="0,0,0,1" Margin="0,0,0,16"/>
+
                     <TextBlock Text="Ergebnis" FontWeight="SemiBold" FontSize="16"
                                Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4"/>
                     <TextBlock x:Name="TxtErgebnisHinweis" TextWrapping="Wrap" FontSize="12"

@@ -1,0 +1,127 @@
+<Window x:Class="AnlageEditor.NeuesSystemWizard"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Neues System anlegen" Height="640" Width="720" MinHeight="560" MinWidth="620"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource BgApp}" FontFamily="Segoe UI">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Kopf: Schrittanzeige -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock x:Name="TxtSchritt" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{StaticResource AccentRed}" Text="Schritt 1 von 3"/>
+            <TextBlock x:Name="TxtTitel" FontSize="19" FontWeight="SemiBold"
+                       Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
+            <TextBlock x:Name="TxtUntertitel" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Inhalt je Schritt -->
+        <Border Grid.Row="1" Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderGray}"
+                BorderThickness="1" CornerRadius="8" Padding="18">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <Grid>
+                    <!-- Schritt 1: Zielbeschreibung -->
+                    <StackPanel x:Name="SchrittZiel">
+                        <RadioButton x:Name="RbZielProduktionsplanung" GroupName="Ziel"
+                                     Style="{StaticResource AuswahlKarte}" Checked="Ziel_Checked">
+                            <StackPanel>
+                                <TextBlock Text="Produktionsplanung" FontWeight="SemiBold" FontSize="13"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           Text="Aussage über Output und OEE des Systems; auch Produktmixe werden abgebildet."/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="RbZielProofOfConcept" GroupName="Ziel"
+                                     Style="{StaticResource AuswahlKarte}" Checked="Ziel_Checked">
+                            <StackPanel>
+                                <TextBlock Text="Proof of Concept" FontWeight="SemiBold" FontSize="13"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           Text="Aussage über Taktzeiten und Erreichbarkeit von Robotern; Störfälle und Sonderabläufe werden nicht berücksichtigt."/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="RbZielRendering" GroupName="Ziel"
+                                     Style="{StaticResource AuswahlKarte}" Checked="Ziel_Checked">
+                            <StackPanel>
+                                <TextBlock Text="Rendering" FontWeight="SemiBold" FontSize="13"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           Text="Visuell ansprechende Darstellung des Systems in Bild oder Video, z. B. zur Vertriebsunterstützung."/>
+                            </StackPanel>
+                        </RadioButton>
+                    </StackPanel>
+
+                    <!-- Schritt 2: Aufgabendefinition (Level) -->
+                    <StackPanel x:Name="SchrittLevel" Visibility="Collapsed">
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   Text="Level, die zum gewählten Ziel passen (siehe Vorgehensmodell)."/>
+                        <StackPanel x:Name="PanelLevelKarten"/>
+                    </StackPanel>
+
+                    <!-- Schritt 3: Systemanalyse &amp; Datenbeschaffung (Meta-Systeminformationen) -->
+                    <StackPanel x:Name="SchrittMeta">
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,12"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   Text="Systemelemente werden nicht hier erfasst, sondern automatisch aus den Stationen abgeleitet, die anschließend auf dem Canvas angelegt werden."/>
+
+                        <TextBlock Text="Systembezeichnung" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtSystembezeichnung"/>
+
+                        <TextBlock Text="Systemgrenzen" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtSystemgrenzen"/>
+
+                        <TextBlock Text="Eingangsgrößen" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtEingangsgroessen"/>
+
+                        <TextBlock Text="Ausgangsgrößen" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtAusgangsgroessen"/>
+
+                        <TextBlock Text="Ablaufstruktur (übergeordnet)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtAblaufstruktur"/>
+
+                        <TextBlock Text="Bauteile" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtBauteile"/>
+
+                        <TextBlock Text="Systemklassifikation" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtSystemklassifikation" Text="dynamisch, ereignisdiskret"/>
+
+                        <TextBlock Text="Annahmen / Vereinfachungen" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="TxtAnnahmen"/>
+
+                        <StackPanel x:Name="PanelLevel1Bis2Felder" Visibility="Collapsed">
+                            <TextBlock Text="Produktionsplan" Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="TxtProduktionsplan"/>
+                            <TextBlock Text="MTBF &amp; MTTR Zeiten" Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="TxtMtbfMttr"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Fuss: Navigation -->
+        <Grid Grid.Row="2" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" x:Name="BtnZurueck" Content="Zurück" Width="100"
+                    Style="{StaticResource SecondaryButton}" Click="Zurueck_Click"/>
+            <Button Grid.Column="2" Content="Abbrechen" Width="100" Margin="0,8,10,0"
+                    Style="{StaticResource SecondaryButton}" Click="Abbrechen_Click"/>
+            <Button Grid.Column="3" x:Name="BtnWeiter" Content="Weiter" Width="130" Click="Weiter_Click"/>
+        </Grid>
+    </Grid>
+</Window>
