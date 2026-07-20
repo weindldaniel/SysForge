@@ -1,24 +1,7 @@
 using Anlagensimulation;
 
-// ---- Materialflussmodell aufbauen (Beispiel: serielle Linie S1..S5) ----
-var anlage = new Anlage();
-anlage.FuegeStationHinzu("S1", 5.0, 1.2);
-anlage.FuegeStationHinzu("S2", 6.0, 0.8);
-anlage.FuegeStationHinzu("S3", 4.0, 2.0);
-anlage.FuegeStationHinzu("S4", 7.0, 1.0);
-anlage.FuegeStationHinzu("S5", 3.0, 0.6);
-
-anlage.Verbinde("S1", "S2");
-anlage.Verbinde("S2", "S3");
-anlage.Verbinde("S3", "S4");
-anlage.Verbinde("S4", "S5");
-
-anlage.SetzeQuellen("S1");
-
-// Fuer parallelen Materialfluss z. B. eine zweite Maschine parallel zu S2:
-//   anlage.FuegeStationHinzu("S2b", 6.0, 0.8);
-//   anlage.Verbinde("S1", "S2b");
-//   anlage.Verbinde("S2b", "S3");
+// ---- Fiktive Anlage aus Kapitel 4.3 (Bewertung der Ergebnisunsicherheit) ----
+var anlage = FiktiveAnlage.Erstellen();
 
 // ---- Versuchsparameter ----
 int R = 100;    // Wiederholungen
@@ -34,7 +17,7 @@ var rng = new Random(seed);
 var laufMittel = new double[R];
 for (int r = 0; r < R; r++)
 {
-    double[] abgaenge = sim.SimuliereLauf(K, rng);
+    double[] abgaenge = sim.SimuliereLauf(K, rng).Abgaenge;
     double[] takt = Simulation.Taktzeiten(abgaenge);
 
     double summe = 0.0;

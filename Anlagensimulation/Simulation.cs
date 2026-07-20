@@ -13,6 +13,12 @@ namespace Anlagensimulation
     ///  - Zusammenfuehrung: die Station nimmt, was zuerst ankommt (einfache Vereinigung).
     ///    Eine echte Montage (warten auf je ein Teil pro Eingang) waere ein eigener Knotentyp.
     /// </summary>
+    /// <summary>
+    /// Ergebnis eines Simulationslaufs: Abgangszeitpunkte an den Senken sowie je Station
+    /// die darin realisierten Bearbeitungszeiten (Stationszeiten).
+    /// </summary>
+    public sealed record Laufergebnis(double[] Abgaenge, IReadOnlyDictionary<string, double[]> Stationszeiten);
+
     public class Simulation
     {
         private readonly Anlage _anlage;
@@ -21,9 +27,10 @@ namespace Anlagensimulation
 
         /// <summary>
         /// Fuehrt einen Lauf durch, bis <paramref name="anzahlTeile"/> Teile die Senken
-        /// verlassen haben, und liefert deren Abgangszeitpunkte.
+        /// verlassen haben, und liefert deren Abgangszeitpunkte sowie die je Station
+        /// realisierten Bearbeitungszeiten.
         /// </summary>
-        public double[] SimuliereLauf(int anzahlTeile, System.Random rng)
+        public Laufergebnis SimuliereLauf(int anzahlTeile, System.Random rng)
         {
             _anlage.Reset();
 
@@ -31,12 +38,22 @@ namespace Anlagensimulation
             var kalender = new PriorityQueue<Knoten, (double Zeit, long Seq)>();
             long seq = 0;
             var abgaenge = new List<double>();
+            var stationszeiten = new Dictionary<string, List<double>>();
 
             void Starte(Knoten k, double jetzt)
             {
                 k.Belegt = true;
                 k.Fertig = false;
-                k.FertigAb = jetzt + k.ZieheZeit(rng);
+                double dauer = k.ZieheZeit(rng);
+                k.FertigAb = jetzt + dauer;
+
+                if (!stationszeiten.TryGetValue(k.Name, out List<double>? werte))
+                {
+                    werte = new List<double>();
+                    stationszeiten[k.Name] = werte;
+                }
+                werte.Add(dauer);
+
                 kalender.Enqueue(k, (k.FertigAb, seq++));
             }
 
@@ -94,7 +111,9 @@ namespace Anlagensimulation
             }
 
             int anzahl = Math.Min(anzahlTeile, abgaenge.Count);
-            return abgaenge.GetRange(0, anzahl).ToArray();
+            return new Laufergebnis(
+                abgaenge.GetRange(0, anzahl).ToArray(),
+                stationszeiten.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray()));
         }
 
         /// <summary>Taktzeiten als Abstaende aufeinanderfolgender Abgaenge.</summary>

@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, TextBlock> _eigenschaften = new(); // Name -> Untertitel (µ/σ)
     private readonly List<Verbindung> _verbindungen = new();
     private readonly HashSet<string> _quellenNamen = new();               // Namen der aktuellen Quellen
+    private List<IReadOnlyDictionary<string, double[]>> _laeufe = new();  // Stationszeiten je Lauf (Details-Ansicht)
+    private const int MaxDetailEintraege = 50;   // Obergrenze fuer die Detail-Auflistung je Station und Lauf
     private int _stationsIndex = 0;
     private string? _ausgewaehlt;    // aktuell selektierte Station (Modus Auswahl)
     private string? _verbindenVon;   // erste angeklickte Station (Modus Verbinden)
@@ -46,14 +48,14 @@ public partial class MainWindow : Window
     private const double StandardMu = 5.0;
     private const double StandardSigma = 1.0;
 
-    // ---- Farbpalette (hellrot / hellgrau / weiss) ----
+    // ---- Farbpalette (Farbgebung Anwendung: RAL 3002 / RAL 9006 / RAL 7024) ----
     private static readonly Brush FarbeBoxFuellung = Brushes.White;
-    private static readonly Brush FarbeBoxRand = new SolidColorBrush(Color.FromRgb(0xD8, 0xD2, 0xD2));
-    private static readonly Brush FarbeAkzent = new SolidColorBrush(Color.FromRgb(0xE4, 0x73, 0x6B));
-    private static readonly Brush FarbeQuelleFuellung = new SolidColorBrush(Color.FromRgb(0xFB, 0xEA, 0xE8));
-    private static readonly Brush FarbeTextPrimaer = new SolidColorBrush(Color.FromRgb(0x3A, 0x35, 0x35));
-    private static readonly Brush FarbeTextSekundaer = new SolidColorBrush(Color.FromRgb(0x94, 0x8C, 0x8C));
-    private static readonly Brush FarbePfeil = new SolidColorBrush(Color.FromRgb(0xAE, 0xA6, 0xA6));
+    private static readonly Brush FarbeBoxRand = new SolidColorBrush(Color.FromRgb(0xE4, 0xE4, 0xE4));
+    private static readonly Brush FarbeAkzent = new SolidColorBrush(Color.FromRgb(0xB2, 0x0B, 0x10));
+    private static readonly Brush FarbeQuelleFuellung = new SolidColorBrush(Color.FromRgb(0xF7, 0xE3, 0xE3));
+    private static readonly Brush FarbeTextPrimaer = new SolidColorBrush(Color.FromRgb(0x45, 0x49, 0x4E));
+    private static readonly Brush FarbeTextSekundaer = new SolidColorBrush(Color.FromRgb(0x78, 0x78, 0x78));
+    private static readonly Brush FarbePfeil = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A));
 
     public MainWindow()
     {
@@ -227,7 +229,18 @@ public partial class MainWindow : Window
     {
         if (_ausgewaehlt is null) { Melde("Keine Station ausgewählt."); return; }
         string name = _ausgewaehlt;
+        EntferneStationAusModell(name);
 
+        _ausgewaehlt = null;
+        PropPanel.IsEnabled = false;
+        TxtPropName.Text = TxtPropMu.Text = TxtPropSigma.Text = string.Empty;
+
+        Melde($"Station {name} gelöscht.");
+    }
+
+    /// <summary>Entfernt eine Station samt ihrer Verbindungen aus Canvas, UI-Zustand und Anlage.</summary>
+    private void EntferneStationAusModell(string name)
+    {
         foreach (Verbindung v in _verbindungen.Where(v => v.Von == name || v.Nach == name).ToList())
         {
             ModellCanvas.Children.Remove(v.Linie);
@@ -245,12 +258,59 @@ public partial class MainWindow : Window
         _positionen.Remove(name);
         _quellenNamen.Remove(name);
         _anlage.EntferneStation(name);
+    }
+
+    /// <summary>Leert Canvas und Anlage vollständig, z. B. vor dem Laden einer Beispielanlage.</summary>
+    private void AllesLoeschen()
+    {
+        foreach (string name in _boxen.Keys.ToList())
+            EntferneStationAusModell(name);
+
+        foreach (Ellipse token in _materialTokens) ModellCanvas.Children.Remove(token);
+        _materialTokens.Clear();
 
         _ausgewaehlt = null;
+        _verbindenVon = null;
         PropPanel.IsEnabled = false;
         TxtPropName.Text = TxtPropMu.Text = TxtPropSigma.Text = string.Empty;
+    }
 
-        Melde($"Station {name} gelöscht.");
+    /// <summary>
+    /// Baut die fiktive Anlage aus Kapitel 4.3 (siehe Anlagensimulation.FiktiveAnlage,
+    /// dieselbe Definition wie in Anlagensimulation/Program.cs) auf dem Canvas auf und
+    /// stößt anschließend direkt eine Simulation mit den aktuellen Versuchsparametern an.
+    /// </summary>
+    private void FiktiveAnlageLaden_Click(object sender, RoutedEventArgs e)
+    {
+        AllesLoeschen();
+
+        Anlage vorlage = FiktiveAnlage.Erstellen();
+        string[] namen = FiktiveAnlage.Reihenfolge;
+        const double startX = 40;
+        const double abstandX = BoxBreite + 60;
+        const double y = 220;
+
+        for (int i = 0; i < namen.Length; i++)
+        {
+            Knoten k = vorlage.Knoten.First(n => n.Name == namen[i]);
+            double x = startX + i * abstandX;
+
+            _anlage.FuegeStationHinzu(k.Name, k.Mu, k.Sigma);
+            _positionen[k.Name] = new Point(x, y);
+            ZeichneBox(k.Name, x, y);
+        }
+
+        for (int i = 0; i < namen.Length - 1; i++)
+        {
+            _anlage.Verbinde(namen[i], namen[i + 1]);
+            ZeichnePfeil(namen[i], namen[i + 1]);
+        }
+
+        _quellenNamen.Add("Quelle");
+        _boxen["Quelle"].Fill = FarbeQuelleFuellung;
+        _anlage.SetzeQuellen(_quellenNamen.ToArray());
+
+        Simulieren_Click(sender, e);
     }
 
     // ---- Verschieben einer Station ----
@@ -319,21 +379,153 @@ public partial class MainWindow : Window
         var sim = new Simulation(_anlage);
         var rng = new Random(42);
         var laufMittel = new double[R];
+        var stationszeiten = new Dictionary<string, List<double>>();
+        var laeufe = new List<IReadOnlyDictionary<string, double[]>>(R);
 
         for (int r = 0; r < R; r++)
         {
-            double[] abgaenge = sim.SimuliereLauf(K, rng);
-            double[] takt = Simulation.Taktzeiten(abgaenge);
+            Laufergebnis lauf = sim.SimuliereLauf(K, rng);
+            double[] takt = Simulation.Taktzeiten(lauf.Abgaenge);
 
             double summe = 0.0;
             for (int i = warmup; i < takt.Length; i++) summe += takt[i];
             laufMittel[r] = summe / (takt.Length - warmup);
+
+            foreach ((string name, double[] werte) in lauf.Stationszeiten)
+            {
+                if (!stationszeiten.TryGetValue(name, out List<double>? liste))
+                {
+                    liste = new List<double>();
+                    stationszeiten[name] = liste;
+                }
+                liste.AddRange(werte);
+            }
+
+            laeufe.Add(lauf.Stationszeiten);
         }
 
         KonfidenzIntervall ki = Statistik.Konfidenzintervall(laufMittel, niveau);
-        Melde($"Mittlere Taktzeit: {ki.Mittelwert:0.0000}\n" +
-              $"KI ({niveau:P0}): [{ki.Untere:0.0000}; {ki.Obere:0.0000}]\n" +
-              $"Halbbreite: {ki.Halbbreite:0.0000}");
+        ZeigeErgebnis(stationszeiten, laeufe, ki, R, K, warmup, niveau);
+        Melde($"Simulation abgeschlossen: Taktzeit {ki.Mittelwert:0.0000} " +
+              $"[{ki.Untere:0.0000}; {ki.Obere:0.0000}] ({niveau:P0}).");
+    }
+
+    /// <summary>Stationsnamen in Fließreihenfolge (Canvas-Position von links nach rechts).</summary>
+    private IEnumerable<string> StationenGeordnet(IEnumerable<string> namen) =>
+        namen.OrderBy(name => _positionen.TryGetValue(name, out Point p) ? p.X : double.MaxValue);
+
+    // ---- Ergebnis-Panel (Stufe 1: Stationszeiten, Stufe 2: Gesamtanlagen-Taktzeit) ----
+    private void ZeigeErgebnis(
+        Dictionary<string, List<double>> stationszeiten, List<IReadOnlyDictionary<string, double[]>> laeufe,
+        KonfidenzIntervall ki, int R, int K, int warmup, double niveau)
+    {
+        TxtErgebnisHinweis.Visibility = Visibility.Collapsed;
+        PanelStufe1.Visibility = Visibility.Visible;
+        PanelStufe2.Visibility = Visibility.Visible;
+
+        // Stufe 1: Stationszeiten in Fließreihenfolge (Canvas-Position von links nach rechts).
+        PanelStationszeiten.Children.Clear();
+        foreach (string name in StationenGeordnet(stationszeiten.Keys))
+        {
+            (double mittelwert, double std) = Statistik.Kennzahlen(stationszeiten[name]);
+
+            var zeile = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+            zeile.Children.Add(new TextBlock
+            {
+                Text = name,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 12,
+                Foreground = FarbeTextPrimaer
+            });
+            zeile.Children.Add(new TextBlock
+            {
+                Text = $"⌀ Zykluszeit {mittelwert:0.00}   σ {std:0.00}   (n={stationszeiten[name].Count})",
+                FontSize = 11,
+                Foreground = FarbeTextSekundaer
+            });
+            PanelStationszeiten.Children.Add(zeile);
+        }
+
+        // Stufe 2: Gesamtanlagen-Taktzeit inkl. Konfidenzintervall.
+        PanelGesamtergebnis.Children.Clear();
+        void Zeile(string bezeichnung, string wert)
+        {
+            var grid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var label = new TextBlock { Text = bezeichnung, FontSize = 12, Foreground = FarbeTextSekundaer };
+            var wertblock = new TextBlock { Text = wert, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = FarbeTextPrimaer };
+            Grid.SetColumn(wertblock, 1);
+
+            grid.Children.Add(label);
+            grid.Children.Add(wertblock);
+            PanelGesamtergebnis.Children.Add(grid);
+        }
+
+        Zeile("Wiederholungen R", R.ToString());
+        Zeile("Teile je Lauf K", K.ToString());
+        Zeile("Warm-up (verworfen)", warmup.ToString());
+        Zeile("Konfidenzniveau", niveau.ToString("P0"));
+        Zeile("Mittlere Taktzeit", ki.Mittelwert.ToString("0.0000"));
+        Zeile("Konfidenzintervall", $"[{ki.Untere:0.0000}; {ki.Obere:0.0000}]");
+        Zeile("Halbbreite", ki.Halbbreite.ToString("0.0000"));
+
+        // Details: je Lauf durchklickbare, ungekürzte Stationszeiten (siehe BtnDetails_Click).
+        _laeufe = laeufe;
+        CmbLauf.SelectionChanged -= CmbLauf_SelectionChanged;
+        CmbLauf.Items.Clear();
+        for (int r = 1; r <= laeufe.Count; r++) CmbLauf.Items.Add($"Lauf {r}");
+        CmbLauf.SelectionChanged += CmbLauf_SelectionChanged;
+        if (CmbLauf.Items.Count > 0) CmbLauf.SelectedIndex = 0;
+    }
+
+    private void BtnDetails_Click(object sender, RoutedEventArgs e)
+    {
+        bool zeigen = PanelDetails.Visibility != Visibility.Visible;
+        PanelDetails.Visibility = zeigen ? Visibility.Visible : Visibility.Collapsed;
+        BtnDetails.Content = zeigen ? "Details ausblenden" : "Details anzeigen";
+    }
+
+    private void CmbLauf_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        int index = CmbLauf.SelectedIndex;
+        if (index < 0 || index >= _laeufe.Count) return;
+        ZeigeLaufDetails(_laeufe[index]);
+    }
+
+    /// <summary>Listet je Station die realisierten Stationszeiten des gewählten Laufs auf (bis <see cref="MaxDetailEintraege"/>).</summary>
+    private void ZeigeLaufDetails(IReadOnlyDictionary<string, double[]> laufDaten)
+    {
+        PanelLaufDetails.Children.Clear();
+
+        foreach (string name in StationenGeordnet(laufDaten.Keys))
+        {
+            double[] werte = laufDaten[name];
+            int anzahlGezeigt = Math.Min(werte.Length, MaxDetailEintraege);
+
+            var zeilen = new System.Text.StringBuilder();
+            for (int i = 0; i < anzahlGezeigt; i++)
+                zeilen.AppendLine($"{i + 1,3}:  {werte[i]:0.00}");
+
+            PanelLaufDetails.Children.Add(new TextBlock
+            {
+                Text = werte.Length > anzahlGezeigt
+                    ? $"{name}  (erste {anzahlGezeigt} von {werte.Length})"
+                    : $"{name}  ({werte.Length})",
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 12,
+                Foreground = FarbeTextPrimaer,
+                Margin = new Thickness(0, 10, 0, 4)
+            });
+            PanelLaufDetails.Children.Add(new TextBlock
+            {
+                Text = zeilen.ToString().TrimEnd(),
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 11,
+                Foreground = FarbeTextSekundaer
+            });
+        }
     }
 
     // ---- Materialfluss-Visualisierung ----
