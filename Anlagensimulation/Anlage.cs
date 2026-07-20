@@ -13,6 +13,11 @@ namespace Anlagensimulation
         public IReadOnlyCollection<Knoten> Knoten => _knoten.Values;
         public IReadOnlyList<Knoten> Quellen => _quellen;
 
+        // ---- Aufgabenspezifikation (Kapitel 4.1.1/4.1.2/4.1.5) ----
+        public Zielkategorie? Ziel { get; set; }
+        public int? Level { get; set; }
+        public SystemMetaInformationen Meta { get; set; } = new();
+
         /// <summary>Fuegt eine Station mit Erwartungswert und Standardabweichung hinzu.</summary>
         public Knoten FuegeStationHinzu(string name, double mu, double sigma)
         {

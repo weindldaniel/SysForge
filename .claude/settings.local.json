@@ -8,7 +8,10 @@
       "Bash(powershell -Command \"Get-Process AnlagenEditor -ErrorAction SilentlyContinue\")",
       "Bash(powershell -Command \"Get-Process AnlagenEditor -ErrorAction SilentlyContinue | Select-Object Id\")",
       "PowerShell(Stop-Process -Name \"AnlagenEditor\" -Force -ErrorAction SilentlyContinue)",
-      "PowerShell(\"closed\")"
+      "PowerShell(\"closed\")",
+      "Bash(latexmk -pdf -g -interaction=nonstopmode -halt-on-error \"Bsc-Projekt_Weindl.tex\")",
+      "Bash(latexmk -pdf -interaction=nonstopmode -halt-on-error \"Bsc-Projekt_Weindl.tex\")",
+      "Bash(tasklist)"
     ]
   }
 }

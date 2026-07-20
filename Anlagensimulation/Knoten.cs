@@ -16,6 +16,9 @@ namespace Anlagensimulation
         public List<Knoten> Nachfolger { get; } = new();
         public List<Knoten> Vorgaenger { get; } = new();
 
+        /// <summary>Systemelement-Informationen (Kapitel 4.1.5), Feld -> Wert; Felder je Level siehe SystemelementFelder.</summary>
+        public Dictionary<string, string> Systeminformationen { get; } = new();
+
         // --- Laufzeitzustand ---
         public bool Belegt { get; set; }      // Teil in der Station (Bearbeitung oder blockiert)
         public bool Fertig { get; set; }      // fertig bearbeitet, wartet auf Weitergabe

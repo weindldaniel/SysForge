@@ -15,6 +15,14 @@ namespace Anlagensimulation
 
     public static class Statistik
     {
+        /// <summary>Mittelwert und Stichproben-Standardabweichung einer Wertereihe.</summary>
+        public static (double Mittelwert, double Std) Kennzahlen(IReadOnlyList<double> werte)
+        {
+            double mittelwert = Statistics.Mean(werte);
+            double std = werte.Count > 1 ? Statistics.StandardDeviation(werte) : 0.0;
+            return (mittelwert, std);
+        }
+
         /// <summary>
         /// Zweiseitiges Konfidenzintervall fuer den Erwartungswert.
         /// Nutzt die t-Verteilung mit R-1 Freiheitsgraden, da die
