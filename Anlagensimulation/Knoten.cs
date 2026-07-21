@@ -9,7 +9,7 @@ namespace Anlagensimulation
     /// </summary>
     public class Knoten
     {
-        public string Name { get; }
+        public string Name { get; set; }
         public double Mu { get; set; }
         public double Sigma { get; set; }
 

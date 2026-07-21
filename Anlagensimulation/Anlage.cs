@@ -43,6 +43,22 @@ namespace Anlagensimulation
                 _quellen.Add(_knoten[n]);
         }
 
+        /// <summary>
+        /// Benennt eine Station um. Liefert false, wenn der neue Name bereits vergeben ist
+        /// oder die alte Station nicht existiert; die Anlage bleibt dabei unveraendert.
+        /// </summary>
+        public bool UmbenenneStation(string alterName, string neuerName)
+        {
+            if (alterName == neuerName) return true;
+            if (!_knoten.TryGetValue(alterName, out Knoten? k)) return false;
+            if (_knoten.ContainsKey(neuerName)) return false;
+
+            _knoten.Remove(alterName);
+            k.Name = neuerName;
+            _knoten[neuerName] = k;
+            return true;
+        }
+
         /// <summary>Entfernt eine Station samt aller ein-/ausgehenden Flusskanten.</summary>
         public void EntferneStation(string name)
         {

@@ -24,6 +24,8 @@ public partial class MainWindow : Window
     private List<IReadOnlyDictionary<string, double[]>> _laeufe = new();  // Stationszeiten je Lauf (Details-Ansicht)
     private const int MaxDetailEintraege = 50;   // Obergrenze fuer die Detail-Auflistung je Station und Lauf
     private readonly Dictionary<string, TextBox> _feldEditoren = new();   // Feldname -> Editor der aktuell gezeigten Systeminformationen
+    private readonly Stack<Snapshot> _undoStack = new();
+    private const int MaxUndoSchritte = 50;
     private int _stationsIndex = 0;
     private string? _ausgewaehlt;    // aktuell selektierte Station (Modus Auswahl)
     private string? _verbindenVon;   // erste angeklickte Station (Modus Verbinden)
@@ -43,6 +45,15 @@ public partial class MainWindow : Window
     private enum Modus { Auswahl, Verbinden, Quelle }
 
     private sealed record Verbindung(string Von, string Nach, Line Linie, Polygon Spitze);
+
+    // ---- Rueckgaengig (Strg+Z): Schnappschuss des gesamten bearbeitbaren Zustands ----
+    private sealed record StationSnapshot(
+        string Name, double Mu, double Sigma, double X, double Y,
+        bool IstQuelle, Dictionary<string, string> Systeminformationen);
+
+    private sealed record Snapshot(
+        List<StationSnapshot> Stationen, List<(string Von, string Nach)> Verbindungen,
+        Zielkategorie? Ziel, int? Level, SystemMetaInformationen Meta);
 
     private const double BoxBreite = 90;
     private const double BoxHoehe = 56;
@@ -64,12 +75,99 @@ public partial class MainWindow : Window
         RbModusAuswahl.IsChecked = true;   // loest Modus_Checked aus (Namen sind jetzt initialisiert)
     }
 
+    // ---- Rueckgaengig (Strg+Z) ----
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            Rueckgaengig();
+            e.Handled = true;
+        }
+    }
+
+    private void Rueckgaengig_Click(object sender, RoutedEventArgs e) => Rueckgaengig();
+
+    /// <summary>Sichert den aktuellen Zustand, bevor eine mutierende Aktion ausgeführt wird.</summary>
+    private void SichereFuerUndo()
+    {
+        _undoStack.Push(ErstelleSnapshot());
+        if (_undoStack.Count <= MaxUndoSchritte) return;
+
+        var uebrig = _undoStack.Reverse().Skip(1).Reverse().ToList();   // aeltesten Eintrag verwerfen
+        _undoStack.Clear();
+        foreach (Snapshot s in uebrig) _undoStack.Push(s);
+    }
+
+    private Snapshot ErstelleSnapshot()
+    {
+        var stationen = _anlage.Knoten.Select(k => new StationSnapshot(
+            k.Name, k.Mu, k.Sigma,
+            _positionen[k.Name].X, _positionen[k.Name].Y,
+            _quellenNamen.Contains(k.Name),
+            new Dictionary<string, string>(k.Systeminformationen))).ToList();
+
+        var verbindungen = _verbindungen.Select(v => (v.Von, v.Nach)).ToList();
+
+        return new Snapshot(stationen, verbindungen, _anlage.Ziel, _anlage.Level, KopiereMeta(_anlage.Meta));
+    }
+
+    private static SystemMetaInformationen KopiereMeta(SystemMetaInformationen m) => new()
+    {
+        Systembezeichnung = m.Systembezeichnung,
+        Systemgrenzen = m.Systemgrenzen,
+        Eingangsgroessen = m.Eingangsgroessen,
+        Ausgangsgroessen = m.Ausgangsgroessen,
+        AblaufstrukturUebergeordnet = m.AblaufstrukturUebergeordnet,
+        Bauteile = m.Bauteile,
+        Systemklassifikation = m.Systemklassifikation,
+        AnnahmenVereinfachungen = m.AnnahmenVereinfachungen,
+        Produktionsplan = m.Produktionsplan,
+        MtbfMttr = m.MtbfMttr
+    };
+
+    private void Rueckgaengig()
+    {
+        if (_undoStack.Count == 0) { Melde("Nichts zum Rückgängigmachen."); return; }
+
+        Snapshot snap = _undoStack.Pop();
+        AllesLoeschen();
+
+        foreach (StationSnapshot s in snap.Stationen)
+        {
+            _anlage.FuegeStationHinzu(s.Name, s.Mu, s.Sigma);
+            Knoten k = _anlage.Knoten.First(n => n.Name == s.Name);
+            foreach ((string feld, string wert) in s.Systeminformationen) k.Systeminformationen[feld] = wert;
+
+            _positionen[s.Name] = new Point(s.X, s.Y);
+            ZeichneBox(s.Name, s.X, s.Y);
+            if (s.IstQuelle) _quellenNamen.Add(s.Name);
+        }
+
+        foreach ((string von, string nach) in snap.Verbindungen)
+        {
+            _anlage.Verbinde(von, nach);
+            ZeichnePfeil(von, nach);
+        }
+
+        _anlage.SetzeQuellen(_quellenNamen.ToArray());
+        foreach (string q in _quellenNamen)
+            if (_boxen.TryGetValue(q, out Rectangle? box)) box.Fill = FarbeQuelleFuellung;
+
+        _anlage.Ziel = snap.Ziel;
+        _anlage.Level = snap.Level;
+        _anlage.Meta = snap.Meta;
+        AktualisiereSystemInfo();
+
+        Melde("Letzte Änderung rückgängig gemacht.");
+    }
+
     // ---- Neues System (Zielbeschreibung -> Aufgabendefinition -> Meta-Systeminformationen) ----
     private void NeuesSystemAnlegen_Click(object sender, RoutedEventArgs e)
     {
         var wizard = new NeuesSystemWizard { Owner = this };
         if (wizard.ShowDialog() != true) return;
 
+        SichereFuerUndo();
         AllesLoeschen();
         _anlage.Ziel = wizard.GewaehltesZiel;
         _anlage.Level = wizard.GewaehltesLevel;
@@ -195,6 +293,7 @@ public partial class MainWindow : Window
         }
 
         string von = _verbindenVon;
+        SichereFuerUndo();
         _anlage.Verbinde(von, name);
         ZeichnePfeil(von, name);
         AktualisiereBoxRand(von);
@@ -204,6 +303,7 @@ public partial class MainWindow : Window
 
     private void KlickQuelle(string name)
     {
+        SichereFuerUndo();
         if (_quellenNamen.Contains(name))
         {
             _quellenNamen.Remove(name);
@@ -259,6 +359,7 @@ public partial class MainWindow : Window
             name = $"St{_stationsIndex}";
         } while (_positionen.ContainsKey(name));
 
+        SichereFuerUndo();
         _anlage.FuegeStationHinzu(name, StandardMu, StandardSigma);
         _positionen[name] = new Point(x, y);
 
@@ -343,6 +444,23 @@ public partial class MainWindow : Window
         if (!TryParseZahl(TxtPropMu.Text, out double mu)) { Melde("µ ist keine Zahl."); return; }
         if (!TryParseZahl(TxtPropSigma.Text, out double sigma)) { Melde("σ ist keine Zahl."); return; }
 
+        string neuerName = TxtPropName.Text.Trim();
+        if (string.IsNullOrWhiteSpace(neuerName)) { Melde("Name darf nicht leer sein."); return; }
+
+        SichereFuerUndo();
+
+        string alterName = _ausgewaehlt;
+        if (neuerName != alterName)
+        {
+            if (!UmbenenneStationUI(alterName, neuerName))
+            {
+                _undoStack.Pop();   // Schnappschuss verwerfen, da nichts geaendert wurde
+                Melde($"Name \"{neuerName}\" ist bereits vergeben.");
+                return;
+            }
+            _ausgewaehlt = neuerName;
+        }
+
         Knoten k = _anlage.Knoten.First(n => n.Name == _ausgewaehlt);
         k.Mu = mu;
         k.Sigma = sigma;
@@ -354,10 +472,53 @@ public partial class MainWindow : Window
         Melde($"Station {_ausgewaehlt}: µ={mu}, σ={sigma} und Systeminformationen übernommen.");
     }
 
+    /// <summary>
+    /// Benennt eine Station in Anlage, Canvas und allen namensindizierten Sammlungen um.
+    /// Liefert false, wenn der neue Name bereits vergeben ist; dann bleibt alles unveraendert.
+    /// </summary>
+    private bool UmbenenneStationUI(string alterName, string neuerName)
+    {
+        if (_boxen.ContainsKey(neuerName)) return false;
+        if (!_anlage.UmbenenneStation(alterName, neuerName)) return false;
+
+        Rectangle box = _boxen[alterName];
+        box.Tag = neuerName;
+        _boxen.Remove(alterName);
+        _boxen[neuerName] = box;
+
+        TextBlock label = _beschriftungen[alterName];
+        label.Text = neuerName;
+        _beschriftungen.Remove(alterName);
+        _beschriftungen[neuerName] = label;
+
+        _eigenschaften[neuerName] = _eigenschaften[alterName];
+        _eigenschaften.Remove(alterName);
+
+        _positionen[neuerName] = _positionen[alterName];
+        _positionen.Remove(alterName);
+
+        if (_quellenNamen.Remove(alterName)) _quellenNamen.Add(neuerName);
+        if (_verbindenVon == alterName) _verbindenVon = neuerName;
+
+        for (int i = 0; i < _verbindungen.Count; i++)
+        {
+            Verbindung v = _verbindungen[i];
+            if (v.Von != alterName && v.Nach != alterName) continue;
+            _verbindungen[i] = v with
+            {
+                Von = v.Von == alterName ? neuerName : v.Von,
+                Nach = v.Nach == alterName ? neuerName : v.Nach
+            };
+        }
+
+        return true;
+    }
+
     private void StationLoeschen_Click(object sender, RoutedEventArgs e)
     {
         if (_ausgewaehlt is null) { Melde("Keine Station ausgewählt."); return; }
         string name = _ausgewaehlt;
+        SichereFuerUndo();
         EntferneStationAusModell(name);
 
         _ausgewaehlt = null;
@@ -415,6 +576,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void FiktiveAnlageLaden_Click(object sender, RoutedEventArgs e)
     {
+        SichereFuerUndo();
         AllesLoeschen();
 
         Anlage vorlage = FiktiveAnlage.Erstellen();
@@ -462,6 +624,7 @@ public partial class MainWindow : Window
         _hatGezogen = false;
         _ziehStartMaus = e.GetPosition(ModellCanvas);
         _ziehStartBox = _positionen[name];
+        SichereFuerUndo();   // wird in StationMouseUp verworfen, falls gar nicht gezogen wurde
         rect.CaptureMouse();
         e.Handled = true;
     }
@@ -487,7 +650,11 @@ public partial class MainWindow : Window
         e.Handled = true;
 
         if (_hatGezogen) Melde($"Station {name} verschoben.");
-        else StationKlick(name);
+        else
+        {
+            if (_undoStack.Count > 0) _undoStack.Pop();   // kein tatsaechliches Ziehen -> Schnappschuss verwerfen
+            StationKlick(name);
+        }
     }
 
     private void VersetzeBox(string name, double x, double y)
@@ -773,9 +940,10 @@ public partial class MainWindow : Window
             Cursor = Cursors.Hand,
             Tag = name
         };
-        rect.MouseLeftButtonDown += (_, e) => StationMouseDown(name, rect, e);
-        rect.MouseMove += (_, e) => StationMouseMove(name, e);
-        rect.MouseLeftButtonUp += (_, e) => StationMouseUp(name, rect, e);
+        // Tag statt geschlossenem "name" verwenden, damit Umbenennen (Tag wird aktualisiert) korrekt bleibt.
+        rect.MouseLeftButtonDown += (s, e) => StationMouseDown((string)((Rectangle)s!).Tag, rect, e);
+        rect.MouseMove += (s, e) => StationMouseMove((string)((Rectangle)s!).Tag, e);
+        rect.MouseLeftButtonUp += (s, e) => StationMouseUp((string)((Rectangle)s!).Tag, rect, e);
         Canvas.SetLeft(rect, x);
         Canvas.SetTop(rect, y);
         ModellCanvas.Children.Add(rect);
