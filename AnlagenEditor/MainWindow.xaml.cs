@@ -244,17 +244,59 @@ public partial class MainWindow : Window
     // ---- Neues System (Zielbeschreibung -> Aufgabendefinition -> Meta-Systeminformationen) ----
     private void NeuesSystemAnlegen_Click(object sender, RoutedEventArgs e)
     {
-        var wizard = new NeuesSystemWizard { Owner = this };
+        // Issue #5: Systemdaten zuerst (Meta), Ziel/Level erst spaeter ueber "Systeminformation erhalten".
+        var wizard = new NeuesSystemWizard(WizardModus.NurMeta) { Owner = this };
         if (wizard.ShowDialog() != true) return;
 
         SichereFuerUndo();
         AllesLoeschen();
-        _anlage.Ziel = wizard.GewaehltesZiel;
-        _anlage.Level = wizard.GewaehltesLevel;
         _anlage.Meta = wizard.Meta;
 
         AktualisiereSystemInfo();
-        Melde($"System \"{_anlage.Meta.Systembezeichnung}\" angelegt. Jetzt Stationen hinzufügen.");
+        Melde($"System \"{_anlage.Meta.Systembezeichnung}\" angelegt. Jetzt Stationen hinzufügen, dann bei Bedarf „Systeminformation erhalten“.");
+    }
+
+    /// <summary>
+    /// Fragt Ziel und Level fuer das bestehende System ab (Issue #5: "Systeminformation erhalten").
+    /// Prueft anschliessend, ob bei den bereits angelegten Stationen noch levelabhaengige
+    /// Systeminformationen fehlen, und weist den Benutzer ggf. darauf hin.
+    /// </summary>
+    private void SystemInformationErhalten_Click(object sender, RoutedEventArgs e)
+    {
+        var wizard = new NeuesSystemWizard(WizardModus.NurZielUndLevel, _anlage.Ziel, _anlage.Level) { Owner = this };
+        if (wizard.ShowDialog() != true) return;
+
+        SichereFuerUndo();
+        _anlage.Ziel = wizard.GewaehltesZiel;
+        _anlage.Level = wizard.GewaehltesLevel;
+        AktualisiereSystemInfo();
+
+        if (_ausgewaehlt is not null)
+            BefuelleSystemelementInfo(_anlage.Knoten.First(n => n.Name == _ausgewaehlt));
+
+        int level = _anlage.Level ?? 3;
+        IReadOnlyList<string> benoetigt = SystemelementFelder.FelderFuerLevel(level);
+        var fehlend = new List<string>();
+        foreach (Knoten k in _anlage.Knoten)
+        {
+            var fehlendeFelder = benoetigt
+                .Where(feld => !k.Systeminformationen.TryGetValue(feld, out string? wert) || string.IsNullOrWhiteSpace(wert))
+                .ToList();
+            if (fehlendeFelder.Count > 0)
+                fehlend.Add($"{k.Name}: {string.Join(", ", fehlendeFelder)}");
+        }
+
+        if (fehlend.Count > 0)
+        {
+            MessageBox.Show(this,
+                "Für folgende Stationen fehlen noch Systeminformationen (Level " + level + "):\n\n" + string.Join("\n", fehlend),
+                "Systeminformationen unvollständig");
+            Melde($"Ziel/Level übernommen. {fehlend.Count} Station(en) benötigen noch Systeminformationen.");
+        }
+        else
+        {
+            Melde("Ziel/Level übernommen. Alle Systeminformationen vollständig.");
+        }
     }
 
     /// <summary>
@@ -265,7 +307,11 @@ public partial class MainWindow : Window
     {
         PanelHeaderFelder.Children.Clear();
 
-        if (_anlage.Ziel is null || _anlage.Level is null)
+        SystemMetaInformationen meta = _anlage.Meta;
+        bool systemVorhanden = _anlage.Ziel is not null || _anlage.Level is not null
+            || !string.IsNullOrWhiteSpace(meta.Systembezeichnung) || _anlage.Knoten.Count > 0;
+
+        if (!systemVorhanden)
         {
             TxtHeaderTitel.Text = "Kein System angelegt";
             TxtHeaderZielLevel.Text = "";
@@ -275,18 +321,25 @@ public partial class MainWindow : Window
 
         TxtHeaderHinweis.Visibility = Visibility.Collapsed;
 
-        string ziel = _anlage.Ziel switch
-        {
-            Zielkategorie.Produktionsplanung => "Produktionsplanung",
-            Zielkategorie.ProofOfConcept => "Proof of Concept",
-            Zielkategorie.Rendering => "Rendering",
-            _ => "?"
-        };
-        SystemMetaInformationen meta = _anlage.Meta;
         TxtHeaderTitel.Text = string.IsNullOrWhiteSpace(meta.Systembezeichnung)
             ? "(ohne Bezeichnung)"
             : meta.Systembezeichnung;
-        TxtHeaderZielLevel.Text = $"{ziel} · Level {_anlage.Level}";
+
+        if (_anlage.Ziel is null || _anlage.Level is null)
+        {
+            TxtHeaderZielLevel.Text = "Ziel/Level noch nicht gewählt";
+        }
+        else
+        {
+            string ziel = _anlage.Ziel switch
+            {
+                Zielkategorie.Produktionsplanung => "Produktionsplanung",
+                Zielkategorie.ProofOfConcept => "Proof of Concept",
+                Zielkategorie.Rendering => "Rendering",
+                _ => "?"
+            };
+            TxtHeaderZielLevel.Text = $"{ziel} · Level {_anlage.Level}";
+        }
 
         void Feld(string label, string wert)
         {

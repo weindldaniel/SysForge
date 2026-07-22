@@ -23,6 +23,9 @@
                         <TextBlock TextWrapping="Wrap" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"
                                    Text="Ziel, Level und Systeminformationen werden oben über dem Canvas angezeigt."/>
                         <Button Content="Neues System anlegen" Click="NeuesSystemAnlegen_Click"/>
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource FieldLabel}" Margin="0,8,0,4"
+                                   Text="Stationen anlegen, dann Ziel/Level abfragen:"/>
+                        <Button Content="Systeminformation erhalten" Click="SystemInformationErhalten_Click"/>
                         <UniformGrid Columns="2">
                             <Button Content="Speichern" Style="{StaticResource SecondaryButton}"
                                     Margin="0,8,3,0" Click="Speichern_Click"/>
