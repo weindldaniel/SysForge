@@ -24,6 +24,8 @@ public sealed class StationDatei
     public double Sigma { get; set; }
     public double X { get; set; }
     public double Y { get; set; }
+    public double Breite { get; set; }
+    public double Hoehe { get; set; }
     public bool IstQuelle { get; set; }
     public Dictionary<string, string> Systeminformationen { get; set; } = new();
 }

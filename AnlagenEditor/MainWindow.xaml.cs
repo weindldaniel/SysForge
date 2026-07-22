@@ -20,7 +20,9 @@ public partial class MainWindow : Window
 {
     private readonly Anlage _anlage = new();
     private readonly Dictionary<string, Point> _positionen = new();       // Name -> Boxposition
+    private readonly Dictionary<string, Size> _groessen = new();          // Name -> Boxgroesse (mit Maus aenderbar)
     private readonly Dictionary<string, Rectangle> _boxen = new();        // Name -> Rechteck (fuer Auswahl)
+    private readonly Dictionary<string, Polygon> _griffe = new();         // Name -> Groessengriff (Ecke unten rechts)
     private readonly Dictionary<string, TextBlock> _beschriftungen = new(); // Name -> Namensbeschriftung
     private readonly Dictionary<string, TextBlock> _eigenschaften = new(); // Name -> Untertitel (µ/σ)
     private readonly List<Verbindung> _verbindungen = new();
@@ -42,6 +44,12 @@ public partial class MainWindow : Window
     private Point _ziehStartBox;
     private bool _hatGezogen;
 
+    // ---- Groesse aendern (Umriss einer Station skalieren) ----
+    private string? _groesseName;
+    private Point _groesseStartMaus;
+    private Size _groesseStartGroesse;
+    private bool _hatGroesseGeaendert;
+
     // ---- Materialfluss-Animation ----
     private readonly List<Ellipse> _materialTokens = new();
     private const double MillisekundenProStation = 700;
@@ -51,8 +59,11 @@ public partial class MainWindow : Window
 
     private sealed record Verbindung(string Von, string Nach, Line Linie, Polygon Spitze);
 
-    private const double BoxBreite = 90;
-    private const double BoxHoehe = 56;
+    private const double BoxBreite = 90;   // Standardbreite einer neuen Station
+    private const double BoxHoehe = 56;    // Standardhoehe einer neuen Station
+    private const double MinBoxBreite = 60;
+    private const double MinBoxHoehe = 40;
+    private const double GriffGroesse = 14; // Kantenlaenge des Groessengriffs unten rechts
     private const double StandardMu = 5.0;
     private const double StandardSigma = 1.0;
 
@@ -116,6 +127,8 @@ public partial class MainWindow : Window
                 Sigma = k.Sigma,
                 X = _positionen[k.Name].X,
                 Y = _positionen[k.Name].Y,
+                Breite = _groessen[k.Name].Width,
+                Hoehe = _groessen[k.Name].Height,
                 IstQuelle = _quellenNamen.Contains(k.Name),
                 Systeminformationen = new Dictionary<string, string>(k.Systeminformationen)
             });
@@ -165,6 +178,9 @@ public partial class MainWindow : Window
             foreach ((string feld, string wert) in s.Systeminformationen) k.Systeminformationen[feld] = wert;
 
             _positionen[s.Name] = new Point(s.X, s.Y);
+            _groessen[s.Name] = new Size(
+                s.Breite > 0 ? s.Breite : BoxBreite,
+                s.Hoehe > 0 ? s.Hoehe : BoxHoehe);
             ZeichneBox(s.Name, s.X, s.Y);
             if (s.IstQuelle) _quellenNamen.Add(s.Name);
         }
@@ -627,6 +643,14 @@ public partial class MainWindow : Window
         _eigenschaften[neuerName] = _eigenschaften[alterName];
         _eigenschaften.Remove(alterName);
 
+        Polygon griff = _griffe[alterName];
+        griff.Tag = neuerName;
+        _griffe.Remove(alterName);
+        _griffe[neuerName] = griff;
+
+        _groessen[neuerName] = _groessen[alterName];
+        _groessen.Remove(alterName);
+
         _positionen[neuerName] = _positionen[alterName];
         _positionen.Remove(alterName);
 
@@ -676,11 +700,14 @@ public partial class MainWindow : Window
         ModellCanvas.Children.Remove(_boxen[name]);
         ModellCanvas.Children.Remove(_beschriftungen[name]);
         ModellCanvas.Children.Remove(_eigenschaften[name]);
+        ModellCanvas.Children.Remove(_griffe[name]);
 
         _boxen.Remove(name);
         _beschriftungen.Remove(name);
         _eigenschaften.Remove(name);
+        _griffe.Remove(name);
         _positionen.Remove(name);
+        _groessen.Remove(name);
         _quellenNamen.Remove(name);
         _anlage.EntferneStation(name);
     }
@@ -793,17 +820,52 @@ public partial class MainWindow : Window
     private void VersetzeBox(string name, double x, double y)
     {
         _positionen[name] = new Point(x, y);
-
-        Canvas.SetLeft(_boxen[name], x);
-        Canvas.SetTop(_boxen[name], y);
-        Canvas.SetLeft(_beschriftungen[name], x);
-        Canvas.SetTop(_beschriftungen[name], y + 6);
-        Canvas.SetLeft(_eigenschaften[name], x);
-        Canvas.SetTop(_eigenschaften[name], y + BoxHoehe - 20);
+        AktualisiereBoxLayout(name);
 
         foreach (Verbindung v in _verbindungen)
             if (v.Von == name || v.Nach == name)
                 AktualisierePfeil(v);
+    }
+
+    // ---- Groesse aendern (Umriss ueber den Griff unten rechts skalieren) ----
+    private void GriffMouseDown(string name, Polygon griff, MouseButtonEventArgs e)
+    {
+        _groesseName = name;
+        _hatGroesseGeaendert = false;
+        _groesseStartMaus = e.GetPosition(ModellCanvas);
+        _groesseStartGroesse = _groessen[name];
+        SichereFuerUndo();   // wird in GriffMouseUp verworfen, falls gar nicht skaliert wurde
+        griff.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void GriffMouseMove(string name, MouseEventArgs e)
+    {
+        if (_groesseName != name || e.LeftButton != MouseButtonState.Pressed) return;
+
+        Vector delta = e.GetPosition(ModellCanvas) - _groesseStartMaus;
+        if (!_hatGroesseGeaendert && delta.Length < 4) return;
+        _hatGroesseGeaendert = true;
+
+        double breite = Math.Max(MinBoxBreite, _groesseStartGroesse.Width + delta.X);
+        double hoehe = Math.Max(MinBoxHoehe, _groesseStartGroesse.Height + delta.Y);
+        _groessen[name] = new Size(breite, hoehe);
+
+        AktualisiereBoxLayout(name);
+        foreach (Verbindung v in _verbindungen)
+            if (v.Von == name || v.Nach == name)
+                AktualisierePfeil(v);
+    }
+
+    private void GriffMouseUp(string name, Polygon griff, MouseButtonEventArgs e)
+    {
+        if (_groesseName != name) return;
+        griff.ReleaseMouseCapture();
+        _groesseName = null;
+        e.Handled = true;
+
+        if (_hatGroesseGeaendert) Melde($"Station {name} in der Größe angepasst.");
+        else if (_undoStack.Count > 0) _undoStack.Pop();   // nicht skaliert -> Schnappschuss verwerfen
     }
 
     private void Simulieren_Click(object sender, RoutedEventArgs e)
@@ -1002,9 +1064,9 @@ public partial class MainWindow : Window
             var animY = new DoubleAnimationUsingKeyFrames();
             for (int i = 0; i < faden.Count; i++)
             {
-                Point p = _positionen[faden[i]];
-                double mitteX = p.X + BoxBreite / 2 - token.Width / 2;
-                double mitteY = p.Y + BoxHoehe / 2 - token.Height / 2;
+                Rect r = BoxRechteck(faden[i]);
+                double mitteX = r.X + r.Width / 2 - token.Width / 2;
+                double mitteY = r.Y + r.Height / 2 - token.Height / 2;
                 KeyTime zeit = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * MillisekundenProStation));
                 animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, zeit));
                 animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, zeit));
@@ -1061,10 +1123,10 @@ public partial class MainWindow : Window
     // ---- Zeichnen ----
     private void ZeichneBox(string name, double x, double y)
     {
+        if (!_groessen.ContainsKey(name)) _groessen[name] = new Size(BoxBreite, BoxHoehe);
+
         var rect = new Rectangle
         {
-            Width = BoxBreite,
-            Height = BoxHoehe,
             RadiusX = 6,
             RadiusY = 6,
             Stroke = FarbeBoxRand,
@@ -1077,8 +1139,6 @@ public partial class MainWindow : Window
         rect.MouseLeftButtonDown += (s, e) => StationMouseDown((string)((Rectangle)s!).Tag, rect, e);
         rect.MouseMove += (s, e) => StationMouseMove((string)((Rectangle)s!).Tag, e);
         rect.MouseLeftButtonUp += (s, e) => StationMouseUp((string)((Rectangle)s!).Tag, rect, e);
-        Canvas.SetLeft(rect, x);
-        Canvas.SetTop(rect, y);
         ModellCanvas.Children.Add(rect);
         _boxen[name] = rect;
 
@@ -1087,12 +1147,9 @@ public partial class MainWindow : Window
             Text = name,
             FontWeight = FontWeights.SemiBold,
             Foreground = FarbeTextPrimaer,
-            Width = BoxBreite,
             TextAlignment = TextAlignment.Center,
             IsHitTestVisible = false
         };
-        Canvas.SetLeft(label, x);
-        Canvas.SetTop(label, y + 6);
         ModellCanvas.Children.Add(label);
         _beschriftungen[name] = label;
 
@@ -1102,22 +1159,74 @@ public partial class MainWindow : Window
             Text = FormatiereEigenschaften(k),
             FontSize = 10,
             Foreground = FarbeTextSekundaer,
-            Width = BoxBreite,
             TextAlignment = TextAlignment.Center,
             IsHitTestVisible = false
         };
-        Canvas.SetLeft(untertitel, x);
-        Canvas.SetTop(untertitel, y + BoxHoehe - 20);
         ModellCanvas.Children.Add(untertitel);
         _eigenschaften[name] = untertitel;
+
+        // Groessengriff (Ecke unten rechts) zum Skalieren des Umrisses mit der Maus.
+        var griff = new Polygon
+        {
+            Fill = FarbePfeil,
+            Cursor = Cursors.SizeNWSE,
+            Tag = name
+        };
+        Panel.SetZIndex(griff, 20);
+        griff.MouseLeftButtonDown += (s, e) => GriffMouseDown((string)((Polygon)s!).Tag, (Polygon)s!, e);
+        griff.MouseMove += (s, e) => GriffMouseMove((string)((Polygon)s!).Tag, e);
+        griff.MouseLeftButtonUp += (s, e) => GriffMouseUp((string)((Polygon)s!).Tag, (Polygon)s!, e);
+        ModellCanvas.Children.Add(griff);
+        _griffe[name] = griff;
+
+        AktualisiereBoxLayout(name);
+    }
+
+    /// <summary>
+    /// Positioniert Umriss, Beschriftung, Untertitel und Groessengriff einer Station gemaess
+    /// aktueller Position und Groesse. Aufgerufen beim Zeichnen, Verschieben und Skalieren.
+    /// </summary>
+    private void AktualisiereBoxLayout(string name)
+    {
+        Point p = _positionen[name];
+        Size g = _groessen[name];
+
+        Rectangle box = _boxen[name];
+        box.Width = g.Width;
+        box.Height = g.Height;
+        Canvas.SetLeft(box, p.X);
+        Canvas.SetTop(box, p.Y);
+
+        TextBlock label = _beschriftungen[name];
+        label.Width = g.Width;
+        Canvas.SetLeft(label, p.X);
+        Canvas.SetTop(label, p.Y + 6);
+
+        TextBlock untertitel = _eigenschaften[name];
+        untertitel.Width = g.Width;
+        Canvas.SetLeft(untertitel, p.X);
+        Canvas.SetTop(untertitel, p.Y + g.Height - 20);
+
+        Polygon griff = _griffe[name];
+        double rechts = p.X + g.Width;
+        double unten = p.Y + g.Height;
+        griff.Points = new PointCollection
+        {
+            new Point(rechts - GriffGroesse, unten),
+            new Point(rechts, unten - GriffGroesse),
+            new Point(rechts, unten)
+        };
     }
 
     private static string FormatiereEigenschaften(Knoten k) =>
         $"µ={k.Mu:0.##}  σ={k.Sigma:0.##}";
 
+    private Rect BoxRechteck(string name) =>
+        new(_positionen[name].X, _positionen[name].Y, _groessen[name].Width, _groessen[name].Height);
+
     private void ZeichnePfeil(string von, string nach)
     {
-        var (x1, y1, x2, y2, spitzenPunkte) = PfeilGeometrie(_positionen[von], _positionen[nach]);
+        var (x1, y1, x2, y2, spitzenPunkte) = PfeilGeometrie(BoxRechteck(von), BoxRechteck(nach));
         var linie = new Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = FarbePfeil, StrokeThickness = 1.5 };
         var spitze = new Polygon { Points = spitzenPunkte, Fill = FarbePfeil };
         ModellCanvas.Children.Add(linie);
@@ -1127,27 +1236,50 @@ public partial class MainWindow : Window
 
     private void AktualisierePfeil(Verbindung v)
     {
-        var (x1, y1, x2, y2, spitzenPunkte) = PfeilGeometrie(_positionen[v.Von], _positionen[v.Nach]);
+        var (x1, y1, x2, y2, spitzenPunkte) = PfeilGeometrie(BoxRechteck(v.Von), BoxRechteck(v.Nach));
         v.Linie.X1 = x1; v.Linie.Y1 = y1; v.Linie.X2 = x2; v.Linie.Y2 = y2;
         v.Spitze.Points = spitzenPunkte;
     }
 
-    private static (double x1, double y1, double x2, double y2, PointCollection spitze) PfeilGeometrie(Point von, Point nach)
+    /// <summary>
+    /// Berechnet die Pfeilgeometrie zwischen zwei Stationsumrissen. Der Pfeil verlaeuft entlang
+    /// der Verbindungslinie der beiden Boxmittelpunkte und wird an den Umrissen abgeschnitten,
+    /// sodass er stets an der zugewandten Seite andockt und nie durch eine Station selbst fuehrt.
+    /// </summary>
+    private static (double x1, double y1, double x2, double y2, PointCollection spitze) PfeilGeometrie(Rect von, Rect nach)
     {
-        double x1 = von.X + BoxBreite;
-        double y1 = von.Y + BoxHoehe / 2;
-        double x2 = nach.X;
-        double y2 = nach.Y + BoxHoehe / 2;
+        var vonMitte = new Point(von.X + von.Width / 2, von.Y + von.Height / 2);
+        var nachMitte = new Point(nach.X + nach.Width / 2, nach.Y + nach.Height / 2);
 
-        // Einfache Pfeilspitze am Ziel.
-        double winkel = Math.Atan2(y2 - y1, x2 - x1);
-        const double laenge = 10;
-        var p1 = new Point(x2 - laenge * Math.Cos(winkel - Math.PI / 6),
-                           y2 - laenge * Math.Sin(winkel - Math.PI / 6));
-        var p2 = new Point(x2 - laenge * Math.Cos(winkel + Math.PI / 6),
-                           y2 - laenge * Math.Sin(winkel + Math.PI / 6));
+        Point start = SchnittMitRand(von, vonMitte, nachMitte);
+        Point ende = SchnittMitRand(nach, nachMitte, vonMitte);
 
-        return (x1, y1, x2, y2, new PointCollection { new Point(x2, y2), p1, p2 });
+        // Pfeilspitze am Zielrand, ausgerichtet entlang der Verbindungsstrecke.
+        double winkel = Math.Atan2(ende.Y - start.Y, ende.X - start.X);
+        const double Laenge = 10;
+        var p1 = new Point(ende.X - Laenge * Math.Cos(winkel - Math.PI / 6),
+                           ende.Y - Laenge * Math.Sin(winkel - Math.PI / 6));
+        var p2 = new Point(ende.X - Laenge * Math.Cos(winkel + Math.PI / 6),
+                           ende.Y - Laenge * Math.Sin(winkel + Math.PI / 6));
+
+        return (start.X, start.Y, ende.X, ende.Y, new PointCollection { ende, p1, p2 });
+    }
+
+    /// <summary>
+    /// Liefert den Punkt auf dem Rand von <paramref name="box"/>, an dem die Strecke von
+    /// <paramref name="mitte"/> in Richtung <paramref name="ziel"/> den Rand verlaesst.
+    /// </summary>
+    private static Point SchnittMitRand(Rect box, Point mitte, Point ziel)
+    {
+        double dx = ziel.X - mitte.X;
+        double dy = ziel.Y - mitte.Y;
+        if (dx == 0 && dy == 0) return mitte;
+
+        double skala = double.PositiveInfinity;
+        if (dx != 0) skala = Math.Min(skala, box.Width / 2 / Math.Abs(dx));
+        if (dy != 0) skala = Math.Min(skala, box.Height / 2 / Math.Abs(dy));
+
+        return new Point(mitte.X + dx * skala, mitte.Y + dy * skala);
     }
 
     // ---- Hilfen ----
