@@ -11,7 +11,10 @@
       "PowerShell(\"closed\")",
       "Bash(latexmk -pdf -g -interaction=nonstopmode -halt-on-error \"Bsc-Projekt_Weindl.tex\")",
       "Bash(latexmk -pdf -interaction=nonstopmode -halt-on-error \"Bsc-Projekt_Weindl.tex\")",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(awk 'NR==65167{print length\\($0\\)}' \"C:\\\\Users\\\\weindl\\\\OneDrive - Fill GmbH\\\\Automation & Digitalisierung - Simulation\\\\1. Projekte\\\\30-02644 Spar Press Engineering Study\\\\zeitbasiert.html\")",
+      "Bash(awk -F: '$1 >= 60136 && $1 <= 66508')",
+      "mcp__claude-in-chrome__tabs_context_mcp"
     ]
   }
 }

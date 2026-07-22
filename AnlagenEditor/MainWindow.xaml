@@ -1,7 +1,7 @@
 <Window x:Class="AnlageEditor.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Anlagen-Editor" Height="760" Width="1500"
+        Title="SysForge" Height="760" Width="1500" Icon="Resources/app.ico"
         Background="#F7F8F8" FontFamily="Segoe UI" KeyDown="MainWindow_KeyDown">
 
     <Grid Margin="12">
@@ -23,6 +23,12 @@
                         <TextBlock TextWrapping="Wrap" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"
                                    Text="Ziel, Level und Systeminformationen werden oben über dem Canvas angezeigt."/>
                         <Button Content="Neues System anlegen" Click="NeuesSystemAnlegen_Click"/>
+                        <UniformGrid Columns="2">
+                            <Button Content="Speichern" Style="{StaticResource SecondaryButton}"
+                                    Margin="0,8,3,0" Click="Speichern_Click"/>
+                            <Button Content="Laden" Style="{StaticResource SecondaryButton}"
+                                    Margin="3,8,0,0" Click="Laden_Click"/>
+                        </UniformGrid>
                     </StackPanel>
                 </Border>
 

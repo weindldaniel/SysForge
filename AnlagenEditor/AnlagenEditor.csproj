@@ -6,10 +6,18 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <AssemblyName>SysForge</AssemblyName>
+    <AssemblyTitle>SysForge</AssemblyTitle>
+    <Product>SysForge</Product>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Anlagensimulation\Anlagensimulation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\app.ico" />
   </ItemGroup>
 
 </Project>

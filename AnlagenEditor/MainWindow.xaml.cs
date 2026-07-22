@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -9,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using Anlagensimulation;
+using Microsoft.Win32;
 
 namespace AnlageEditor;
 
@@ -24,8 +28,9 @@ public partial class MainWindow : Window
     private List<IReadOnlyDictionary<string, double[]>> _laeufe = new();  // Stationszeiten je Lauf (Details-Ansicht)
     private const int MaxDetailEintraege = 50;   // Obergrenze fuer die Detail-Auflistung je Station und Lauf
     private readonly Dictionary<string, TextBox> _feldEditoren = new();   // Feldname -> Editor der aktuell gezeigten Systeminformationen
-    private readonly Stack<Snapshot> _undoStack = new();
+    private readonly Stack<AnlageDatei> _undoStack = new();
     private const int MaxUndoSchritte = 50;
+    private const string DateiFilter = "SysForge-Anlage (*.sysforge)|*.sysforge|Alle Dateien (*.*)|*.*";
     private int _stationsIndex = 0;
     private string? _ausgewaehlt;    // aktuell selektierte Station (Modus Auswahl)
     private string? _verbindenVon;   // erste angeklickte Station (Modus Verbinden)
@@ -45,15 +50,6 @@ public partial class MainWindow : Window
     private enum Modus { Auswahl, Verbinden, Quelle }
 
     private sealed record Verbindung(string Von, string Nach, Line Linie, Polygon Spitze);
-
-    // ---- Rueckgaengig (Strg+Z): Schnappschuss des gesamten bearbeitbaren Zustands ----
-    private sealed record StationSnapshot(
-        string Name, double Mu, double Sigma, double X, double Y,
-        bool IstQuelle, Dictionary<string, string> Systeminformationen);
-
-    private sealed record Snapshot(
-        List<StationSnapshot> Stationen, List<(string Von, string Nach)> Verbindungen,
-        Zielkategorie? Ziel, int? Level, SystemMetaInformationen Meta);
 
     private const double BoxBreite = 90;
     private const double BoxHoehe = 56;
@@ -90,25 +86,45 @@ public partial class MainWindow : Window
     /// <summary>Sichert den aktuellen Zustand, bevor eine mutierende Aktion ausgeführt wird.</summary>
     private void SichereFuerUndo()
     {
-        _undoStack.Push(ErstelleSnapshot());
+        _undoStack.Push(ErstelleAnlageDatei());
         if (_undoStack.Count <= MaxUndoSchritte) return;
 
         var uebrig = _undoStack.Reverse().Skip(1).Reverse().ToList();   // aeltesten Eintrag verwerfen
         _undoStack.Clear();
-        foreach (Snapshot s in uebrig) _undoStack.Push(s);
+        foreach (AnlageDatei s in uebrig) _undoStack.Push(s);
     }
 
-    private Snapshot ErstelleSnapshot()
+    /// <summary>
+    /// Erfasst den gesamten bearbeitbaren Zustand (Stationen inkl. Position/Systeminformationen,
+    /// Verbindungen, Quellen, Ziel/Level/Meta) — Grundlage sowohl fuer Undo als auch fuer Speichern.
+    /// </summary>
+    private AnlageDatei ErstelleAnlageDatei()
     {
-        var stationen = _anlage.Knoten.Select(k => new StationSnapshot(
-            k.Name, k.Mu, k.Sigma,
-            _positionen[k.Name].X, _positionen[k.Name].Y,
-            _quellenNamen.Contains(k.Name),
-            new Dictionary<string, string>(k.Systeminformationen))).ToList();
+        var datei = new AnlageDatei
+        {
+            Ziel = _anlage.Ziel,
+            Level = _anlage.Level,
+            Meta = KopiereMeta(_anlage.Meta)
+        };
 
-        var verbindungen = _verbindungen.Select(v => (v.Von, v.Nach)).ToList();
+        foreach (Knoten k in _anlage.Knoten)
+        {
+            datei.Stationen.Add(new StationDatei
+            {
+                Name = k.Name,
+                Mu = k.Mu,
+                Sigma = k.Sigma,
+                X = _positionen[k.Name].X,
+                Y = _positionen[k.Name].Y,
+                IstQuelle = _quellenNamen.Contains(k.Name),
+                Systeminformationen = new Dictionary<string, string>(k.Systeminformationen)
+            });
+        }
 
-        return new Snapshot(stationen, verbindungen, _anlage.Ziel, _anlage.Level, KopiereMeta(_anlage.Meta));
+        foreach (Verbindung v in _verbindungen)
+            datei.Verbindungen.Add(new VerbindungDatei { Von = v.Von, Nach = v.Nach });
+
+        return datei;
     }
 
     private static SystemMetaInformationen KopiereMeta(SystemMetaInformationen m) => new()
@@ -129,10 +145,20 @@ public partial class MainWindow : Window
     {
         if (_undoStack.Count == 0) { Melde("Nichts zum Rückgängigmachen."); return; }
 
-        Snapshot snap = _undoStack.Pop();
+        AnlageDatei datei = _undoStack.Pop();
         AllesLoeschen();
+        WendeAnlageDateiAn(datei);
 
-        foreach (StationSnapshot s in snap.Stationen)
+        Melde("Letzte Änderung rückgängig gemacht.");
+    }
+
+    /// <summary>
+    /// Baut Canvas und Anlage aus einer <see cref="AnlageDatei"/> neu auf (Undo und Laden aus
+    /// Datei). Erwartet ein bereits geleertes Canvas (siehe <see cref="AllesLoeschen"/>).
+    /// </summary>
+    private void WendeAnlageDateiAn(AnlageDatei datei)
+    {
+        foreach (StationDatei s in datei.Stationen)
         {
             _anlage.FuegeStationHinzu(s.Name, s.Mu, s.Sigma);
             Knoten k = _anlage.Knoten.First(n => n.Name == s.Name);
@@ -143,22 +169,76 @@ public partial class MainWindow : Window
             if (s.IstQuelle) _quellenNamen.Add(s.Name);
         }
 
-        foreach ((string von, string nach) in snap.Verbindungen)
+        foreach (VerbindungDatei v in datei.Verbindungen)
         {
-            _anlage.Verbinde(von, nach);
-            ZeichnePfeil(von, nach);
+            _anlage.Verbinde(v.Von, v.Nach);
+            ZeichnePfeil(v.Von, v.Nach);
         }
 
         _anlage.SetzeQuellen(_quellenNamen.ToArray());
         foreach (string q in _quellenNamen)
             if (_boxen.TryGetValue(q, out Rectangle? box)) box.Fill = FarbeQuelleFuellung;
 
-        _anlage.Ziel = snap.Ziel;
-        _anlage.Level = snap.Level;
-        _anlage.Meta = snap.Meta;
+        _anlage.Ziel = datei.Ziel;
+        _anlage.Level = datei.Level;
+        _anlage.Meta = datei.Meta;
         AktualisiereSystemInfo();
+    }
 
-        Melde("Letzte Änderung rückgängig gemacht.");
+    // ---- Speichern / Laden ----
+    private static readonly JsonSerializerOptions JsonOptionen = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private void Speichern_Click(object sender, RoutedEventArgs e)
+    {
+        if (_anlage.Knoten.Count == 0) { Melde("Kein System zum Speichern vorhanden."); return; }
+
+        string vorschlag = string.IsNullOrWhiteSpace(_anlage.Meta.Systembezeichnung)
+            ? "Anlage"
+            : string.Join("_", _anlage.Meta.Systembezeichnung.Split(System.IO.Path.GetInvalidFileNameChars()));
+
+        var dialog = new SaveFileDialog { Filter = DateiFilter, DefaultExt = ".sysforge", FileName = vorschlag };
+        if (dialog.ShowDialog(this) != true) return;
+
+        try
+        {
+            AnlageDatei datei = ErstelleAnlageDatei();
+            string json = JsonSerializer.Serialize(datei, JsonOptionen);
+            File.WriteAllText(dialog.FileName, json);
+            Melde($"System gespeichert: {System.IO.Path.GetFileName(dialog.FileName)}");
+        }
+        catch (Exception ex)
+        {
+            Melde($"Speichern fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    private void Laden_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog { Filter = DateiFilter };
+        if (dialog.ShowDialog(this) != true) return;
+
+        AnlageDatei? datei;
+        try
+        {
+            string json = File.ReadAllText(dialog.FileName);
+            datei = JsonSerializer.Deserialize<AnlageDatei>(json, JsonOptionen);
+        }
+        catch (Exception ex)
+        {
+            Melde($"Laden fehlgeschlagen: {ex.Message}");
+            return;
+        }
+
+        if (datei is null) { Melde("Datei enthält kein gültiges System."); return; }
+
+        SichereFuerUndo();
+        AllesLoeschen();
+        WendeAnlageDateiAn(datei);
+        Melde($"System geladen: {System.IO.Path.GetFileName(dialog.FileName)}");
     }
 
     // ---- Neues System (Zielbeschreibung -> Aufgabendefinition -> Meta-Systeminformationen) ----
