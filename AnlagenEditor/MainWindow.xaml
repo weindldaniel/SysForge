@@ -98,7 +98,9 @@
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <TextBlock Text="Materialfluss" Style="{StaticResource SectionHeader}"/>
-                        <Button Content="▶ Abspielen" Click="MaterialflussAbspielen_Click"/>
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"
+                                   Text="Zeitbasierte Visualisierung: Werkstücke verweilen je Station gemäß µ und werden fortlaufend ab den Quellen nachgeliefert, bis gestoppt wird."/>
+                        <Button x:Name="BtnMaterialfluss" Content="▶ Abspielen" Click="MaterialflussAbspielen_Click"/>
                     </StackPanel>
                 </Border>
 

@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using Anlagensimulation;
 using Microsoft.Win32;
 
@@ -50,9 +51,16 @@ public partial class MainWindow : Window
     private Size _groesseStartGroesse;
     private bool _hatGroesseGeaendert;
 
-    // ---- Materialfluss-Animation ----
+    // ---- Materialfluss-Animation (zeitbasiert, Issue #8) ----
     private readonly List<Ellipse> _materialTokens = new();
-    private const double MillisekundenProStation = 700;
+    private DispatcherTimer? _materialflussTimer;
+    private bool _materialflussLaeuft;
+    private const double MillisekundenProZeiteinheit = 300; // Skalierung: Erwartungswert (µ) -> Verweildauer
+    private const double MinVerweildauerMs = 400;
+    private const double MaxVerweildauerMs = 4000;
+    private const double UebergangsMillisekunden = 400;     // Fahrzeit zwischen zwei Stationen
+    private const double SpawnIntervallMs = 900;             // Abstand neuer Materialwellen ab den Quellen
+    private const int MaxAktiveToken = 300;                  // Schutz vor Explosion bei sehr kurzen Verweildauern
     private const int MaxFaeden = 200;   // Schutz vor Explosion bei stark verzweigten/zyklischen Graphen
 
     private enum Modus { Auswahl, Verbinden, Quelle }
@@ -718,8 +726,7 @@ public partial class MainWindow : Window
         foreach (string name in _boxen.Keys.ToList())
             EntferneStationAusModell(name);
 
-        foreach (Ellipse token in _materialTokens) ModellCanvas.Children.Remove(token);
-        _materialTokens.Clear();
+        MaterialflussStoppen(melden: false);
 
         _ausgewaehlt = null;
         _verbindenVon = null;
@@ -1032,54 +1039,120 @@ public partial class MainWindow : Window
         }
     }
 
-    // ---- Materialfluss-Visualisierung ----
+    // ---- Materialfluss-Visualisierung (zeitbasiert: Verweildauer je Station gemaess µ,
+    // fortlaufende Nachlieferung ab den Quellen bis zum Stoppen; ohne Bezug zum Simulationsbereich) ----
     private void MaterialflussAbspielen_Click(object sender, RoutedEventArgs e)
     {
-        if (_anlage.Quellen.Count == 0) { Melde("Materialfluss: bitte zuerst eine Quelle setzen."); return; }
-
-        List<List<string>> faeden = ErmittleAlleFaeden();
-
-        foreach (Ellipse alterToken in _materialTokens) ModellCanvas.Children.Remove(alterToken);
-        _materialTokens.Clear();
-
-        int animiert = 0;
-        foreach (List<string> faden in faeden)
+        if (_materialflussLaeuft)
         {
-            if (faden.Count < 2) continue;   // Quelle ohne Nachfolger: nichts zu bewegen
-
-            var token = new Ellipse
-            {
-                Width = 18,
-                Height = 18,
-                Fill = FarbeAkzent,
-                Stroke = Brushes.White,
-                StrokeThickness = 2,
-                IsHitTestVisible = false
-            };
-            Panel.SetZIndex(token, 100);
-            ModellCanvas.Children.Add(token);
-            _materialTokens.Add(token);
-
-            var animX = new DoubleAnimationUsingKeyFrames();
-            var animY = new DoubleAnimationUsingKeyFrames();
-            for (int i = 0; i < faden.Count; i++)
-            {
-                Rect r = BoxRechteck(faden[i]);
-                double mitteX = r.X + r.Width / 2 - token.Width / 2;
-                double mitteY = r.Y + r.Height / 2 - token.Height / 2;
-                KeyTime zeit = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * MillisekundenProStation));
-                animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, zeit));
-                animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, zeit));
-            }
-
-            token.BeginAnimation(Canvas.LeftProperty, animX);
-            token.BeginAnimation(Canvas.TopProperty, animY);
-            animiert++;
+            MaterialflussStoppen();
+            return;
         }
 
-        Melde(animiert == 0
-            ? "Materialfluss: keine Quelle hat einen Nachfolger."
-            : $"Materialfluss: {animiert} parallele(r) Pfad(e) animiert.");
+        if (_anlage.Quellen.Count == 0) { Melde("Materialfluss: bitte zuerst eine Quelle setzen."); return; }
+
+        _materialflussLaeuft = true;
+        BtnMaterialfluss.Content = "⏹ Stoppen";
+        Melde("Materialfluss gestartet: Werkstücke werden fortlaufend ab den Quellen nachgeliefert.");
+
+        MaterialflussWelleErzeugen();
+        _materialflussTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SpawnIntervallMs) };
+        _materialflussTimer.Tick += (_, _) => MaterialflussWelleErzeugen();
+        _materialflussTimer.Start();
+    }
+
+    /// <summary>Stoppt die laufende Materialfluss-Animation und entfernt alle aktiven Token.</summary>
+    private void MaterialflussStoppen(bool melden = true)
+    {
+        _materialflussTimer?.Stop();
+        _materialflussTimer = null;
+        _materialflussLaeuft = false;
+        BtnMaterialfluss.Content = "▶ Abspielen";
+
+        foreach (Ellipse token in _materialTokens)
+        {
+            token.BeginAnimation(Canvas.LeftProperty, null);
+            token.BeginAnimation(Canvas.TopProperty, null);
+            ModellCanvas.Children.Remove(token);
+        }
+        _materialTokens.Clear();
+
+        if (melden) Melde("Materialfluss gestoppt.");
+    }
+
+    /// <summary>
+    /// Startet je aktuell moeglichem Pfad (ab jeder Quelle bis zu einer Senke bzw. bis zum
+    /// Zyklusschutz) ein neues Werkstueck-Token. Wird von <see cref="_materialflussTimer"/>
+    /// wiederholt aufgerufen, wodurch der Fluss fortlaufend mit neuem Material gespeist wird.
+    /// </summary>
+    private void MaterialflussWelleErzeugen()
+    {
+        foreach (List<string> faden in ErmittleAlleFaeden())
+        {
+            if (_materialTokens.Count >= MaxAktiveToken) return;   // Schutz vor Explosion
+            if (faden.Count < 2) continue;   // Quelle ohne Nachfolger: nichts zu bewegen
+
+            MaterialflussTokenStarten(faden);
+        }
+    }
+
+    /// <summary>
+    /// Animiert ein einzelnes Werkstueck-Token entlang eines Pfads: An jeder Station verweilt es
+    /// so lange, wie deren Erwartungswert µ vorgibt (siehe <see cref="VerweildauerMs"/>), dazwischen
+    /// wechselt es kurz zur naechsten Station. Entfernt sich selbst, sobald der Pfad endet.
+    /// </summary>
+    private void MaterialflussTokenStarten(List<string> faden)
+    {
+        var token = new Ellipse
+        {
+            Width = 18,
+            Height = 18,
+            Fill = FarbeAkzent,
+            Stroke = Brushes.White,
+            StrokeThickness = 2,
+            IsHitTestVisible = false
+        };
+        Panel.SetZIndex(token, 100);
+        ModellCanvas.Children.Add(token);
+        _materialTokens.Add(token);
+
+        var animX = new DoubleAnimationUsingKeyFrames();
+        var animY = new DoubleAnimationUsingKeyFrames();
+        double t = 0;
+
+        for (int i = 0; i < faden.Count; i++)
+        {
+            Rect r = BoxRechteck(faden[i]);
+            double mitteX = r.X + r.Width / 2 - token.Width / 2;
+            double mitteY = r.Y + r.Height / 2 - token.Height / 2;
+
+            if (i > 0) t += UebergangsMillisekunden;   // Fahrt von der vorherigen Station hierher
+            KeyTime ankunft = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t));
+            animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, ankunft));
+            animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, ankunft));
+
+            t += VerweildauerMs(faden[i]);   // Bearbeitungszeit (µ) dieser Station
+            KeyTime abfahrt = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t));
+            animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, abfahrt));
+            animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, abfahrt));
+        }
+
+        animX.Completed += (_, _) => MaterialflussTokenEntfernen(token);
+        token.BeginAnimation(Canvas.LeftProperty, animX);
+        token.BeginAnimation(Canvas.TopProperty, animY);
+    }
+
+    private void MaterialflussTokenEntfernen(Ellipse token)
+    {
+        ModellCanvas.Children.Remove(token);
+        _materialTokens.Remove(token);
+    }
+
+    /// <summary>Bildet den Erwartungswert (µ) einer Station rein visuell auf eine Animationsdauer ab.</summary>
+    private double VerweildauerMs(string name)
+    {
+        Knoten k = _anlage.Knoten.First(n => n.Name == name);
+        return Math.Clamp(k.Mu * MillisekundenProZeiteinheit, MinVerweildauerMs, MaxVerweildauerMs);
     }
 
     /// <summary>
