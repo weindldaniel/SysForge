@@ -877,6 +877,7 @@ public partial class MainWindow : Window
         {
             Melde("Simulationsparameter ungültig."); return;
         }
+        if (R < 2) { Melde("R muss mindestens 2 sein (das Konfidenzintervall benötigt R-1 ≥ 1 Freiheitsgrade)."); return; }
         if (warmup >= K - 1) { Melde("Warm-up muss kleiner als K sein."); return; }
         if (_anlage.Quellen.Count == 0) { Melde("Bitte zuerst eine Quelle setzen."); return; }
 
