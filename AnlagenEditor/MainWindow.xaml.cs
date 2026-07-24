@@ -51,21 +51,43 @@ public partial class MainWindow : Window
     private Size _groesseStartGroesse;
     private bool _hatGroesseGeaendert;
 
-    // ---- Materialfluss-Animation (zeitbasiert, Issue #8) ----
-    private readonly List<Ellipse> _materialTokens = new();
+    // ---- Materialfluss-Animation (zeitbasiert mit Stationsbelegung, Issue #8/#10) ----
+    private readonly List<AktiverMaterialtoken> _aktiveToken = new();
+    private readonly Dictionary<string, bool> _stationBelegt = new();   // Name -> aktuell durch ein Token belegt?
     private DispatcherTimer? _materialflussTimer;
     private bool _materialflussLaeuft;
     private const double MillisekundenProZeiteinheit = 300; // Skalierung: Erwartungswert (µ) -> Verweildauer
     private const double MinVerweildauerMs = 400;
     private const double MaxVerweildauerMs = 4000;
     private const double UebergangsMillisekunden = 400;     // Fahrzeit zwischen zwei Stationen
-    private const double SpawnIntervallMs = 900;             // Abstand neuer Materialwellen ab den Quellen
+    private const double SpawnPollMs = 250;                  // Intervall, in dem die Quellen pruefen, ob die erste Station frei ist
+    private const double BlockierPollMs = 200;               // Intervall, in dem ein blockiertes Token die Nachfolgestation erneut prueft
     private const int MaxAktiveToken = 300;                  // Schutz vor Explosion bei sehr kurzen Verweildauern
     private const int MaxFaeden = 200;   // Schutz vor Explosion bei stark verzweigten/zyklischen Graphen
 
     private enum Modus { Auswahl, Verbinden, Quelle }
 
     private sealed record Verbindung(string Von, string Nach, Line Linie, Polygon Spitze);
+
+    /// <summary>
+    /// Ein Werkstueck-Token auf seinem Weg durch <see cref="Pfad"/> (Quelle plus Stationsnamen).
+    /// <see cref="Index"/> ist die aktuell belegte Station (>= 1, siehe <see cref="_stationBelegt"/>).
+    /// <see cref="WarteTimer"/> haelt entweder den Verweildauer- oder den Blockier-Poll-Timer.
+    /// </summary>
+    private sealed class AktiverMaterialtoken
+    {
+        public Ellipse Visual { get; }
+        public List<string> Pfad { get; }
+        public int Index { get; set; }
+        public DispatcherTimer? WarteTimer { get; set; }
+
+        public AktiverMaterialtoken(Ellipse visual, List<string> pfad, int index)
+        {
+            Visual = visual;
+            Pfad = pfad;
+            Index = index;
+        }
+    }
 
     private const double BoxBreite = 90;   // Standardbreite einer neuen Station
     private const double BoxHoehe = 56;    // Standardhoehe einer neuen Station
@@ -638,6 +660,8 @@ public partial class MainWindow : Window
         if (_boxen.ContainsKey(neuerName)) return false;
         if (!_anlage.UmbenenneStation(alterName, neuerName)) return false;
 
+        if (_materialflussLaeuft) MaterialflussStoppen(melden: false);   // Token-Pfade referenzieren sonst den alten Namen
+
         Rectangle box = _boxen[alterName];
         box.Tag = neuerName;
         _boxen.Remove(alterName);
@@ -698,6 +722,8 @@ public partial class MainWindow : Window
     /// <summary>Entfernt eine Station samt ihrer Verbindungen aus Canvas, UI-Zustand und Anlage.</summary>
     private void EntferneStationAusModell(string name)
     {
+        if (_materialflussLaeuft) MaterialflussStoppen(melden: false);   // Token-Pfade wuerden sonst auf die geloeschte Station zeigen
+
         foreach (Verbindung v in _verbindungen.Where(v => v.Von == name || v.Nach == name).ToList())
         {
             ModellCanvas.Children.Remove(v.Linie);
@@ -1040,8 +1066,9 @@ public partial class MainWindow : Window
         }
     }
 
-    // ---- Materialfluss-Visualisierung (zeitbasiert: Verweildauer je Station gemaess µ,
-    // fortlaufende Nachlieferung ab den Quellen bis zum Stoppen; ohne Bezug zum Simulationsbereich) ----
+    // ---- Materialfluss-Visualisierung (zeitbasiert mit Stationsbelegung: Verweildauer je Station
+    // gemaess µ, Quelle liefert erst nach, wenn die erste Station frei ist (vgl. Bsc-Projekt Kap. 4.3.4,
+    // Algorithmus der Quelle), fortlaufend bis zum Stoppen; ohne Bezug zum Simulationsbereich) ----
     private void MaterialflussAbspielen_Click(object sender, RoutedEventArgs e)
     {
         if (_materialflussLaeuft)
@@ -1054,10 +1081,10 @@ public partial class MainWindow : Window
 
         _materialflussLaeuft = true;
         BtnMaterialfluss.Content = "⏹ Stoppen";
-        Melde("Materialfluss gestartet: Werkstücke werden fortlaufend ab den Quellen nachgeliefert.");
+        Melde("Materialfluss gestartet: Quellen liefern nach, sobald die erste Station frei ist.");
 
         MaterialflussWelleErzeugen();
-        _materialflussTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SpawnIntervallMs) };
+        _materialflussTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SpawnPollMs) };
         _materialflussTimer.Tick += (_, _) => MaterialflussWelleErzeugen();
         _materialflussTimer.Start();
     }
@@ -1070,41 +1097,42 @@ public partial class MainWindow : Window
         _materialflussLaeuft = false;
         BtnMaterialfluss.Content = "▶ Abspielen";
 
-        foreach (Ellipse token in _materialTokens)
+        foreach (AktiverMaterialtoken token in _aktiveToken)
         {
-            token.BeginAnimation(Canvas.LeftProperty, null);
-            token.BeginAnimation(Canvas.TopProperty, null);
-            ModellCanvas.Children.Remove(token);
+            token.WarteTimer?.Stop();
+            token.Visual.BeginAnimation(Canvas.LeftProperty, null);
+            token.Visual.BeginAnimation(Canvas.TopProperty, null);
+            ModellCanvas.Children.Remove(token.Visual);
         }
-        _materialTokens.Clear();
+        _aktiveToken.Clear();
+        _stationBelegt.Clear();
 
         if (melden) Melde("Materialfluss gestoppt.");
     }
 
     /// <summary>
-    /// Startet je aktuell moeglichem Pfad (ab jeder Quelle bis zu einer Senke bzw. bis zum
-    /// Zyklusschutz) ein neues Werkstueck-Token. Wird von <see cref="_materialflussTimer"/>
-    /// wiederholt aufgerufen, wodurch der Fluss fortlaufend mit neuem Material gespeist wird.
+    /// Prueft je aktuell moeglichem Pfad (ab jeder Quelle bis zu einer Senke bzw. bis zum
+    /// Zyklusschutz), ob dessen erste Station frei ist, und erzeugt dort ggf. ein neues
+    /// Werkstueck-Token (Quelle wartet, bis die erste Station frei ist). Wird von
+    /// <see cref="_materialflussTimer"/> wiederholt aufgerufen, wodurch der Fluss fortlaufend
+    /// mit neuem Material gespeist wird, sobald jeweils Platz ist.
     /// </summary>
     private void MaterialflussWelleErzeugen()
     {
         foreach (List<string> faden in ErmittleAlleFaeden())
         {
-            if (_materialTokens.Count >= MaxAktiveToken) return;   // Schutz vor Explosion
+            if (_aktiveToken.Count >= MaxAktiveToken) return;   // Schutz vor Explosion
             if (faden.Count < 2) continue;   // Quelle ohne Nachfolger: nichts zu bewegen
+            if (_stationBelegt.GetValueOrDefault(faden[1])) continue;   // erste Station belegt: Quelle wartet
 
-            MaterialflussTokenStarten(faden);
+            MaterialflussTokenErzeugen(faden);
         }
     }
 
-    /// <summary>
-    /// Animiert ein einzelnes Werkstueck-Token entlang eines Pfads: An jeder Station verweilt es
-    /// so lange, wie deren Erwartungswert µ vorgibt (siehe <see cref="VerweildauerMs"/>), dazwischen
-    /// wechselt es kurz zur naechsten Station. Entfernt sich selbst, sobald der Pfad endet.
-    /// </summary>
-    private void MaterialflussTokenStarten(List<string> faden)
+    /// <summary>Erzeugt ein Token an der Quelle und laesst es sofort zur (gerade freien) ersten Station fahren.</summary>
+    private void MaterialflussTokenErzeugen(List<string> pfad)
     {
-        var token = new Ellipse
+        var visual = new Ellipse
         {
             Width = 18,
             Height = 18,
@@ -1113,40 +1141,92 @@ public partial class MainWindow : Window
             StrokeThickness = 2,
             IsHitTestVisible = false
         };
-        Panel.SetZIndex(token, 100);
-        ModellCanvas.Children.Add(token);
-        _materialTokens.Add(token);
+        Panel.SetZIndex(visual, 100);
+        ModellCanvas.Children.Add(visual);
 
-        var animX = new DoubleAnimationUsingKeyFrames();
-        var animY = new DoubleAnimationUsingKeyFrames();
-        double t = 0;
+        var token = new AktiverMaterialtoken(visual, pfad, index: 1);
+        _stationBelegt[pfad[1]] = true;
+        _aktiveToken.Add(token);
 
-        for (int i = 0; i < faden.Count; i++)
-        {
-            Rect r = BoxRechteck(faden[i]);
-            double mitteX = r.X + r.Width / 2 - token.Width / 2;
-            double mitteY = r.Y + r.Height / 2 - token.Height / 2;
+        Rect quelle = BoxRechteck(pfad[0]);
+        Canvas.SetLeft(visual, quelle.X + quelle.Width / 2 - visual.Width / 2);
+        Canvas.SetTop(visual, quelle.Y + quelle.Height / 2 - visual.Height / 2);
 
-            if (i > 0) t += UebergangsMillisekunden;   // Fahrt von der vorherigen Station hierher
-            KeyTime ankunft = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t));
-            animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, ankunft));
-            animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, ankunft));
-
-            t += VerweildauerMs(faden[i]);   // Bearbeitungszeit (µ) dieser Station
-            KeyTime abfahrt = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t));
-            animX.KeyFrames.Add(new LinearDoubleKeyFrame(mitteX, abfahrt));
-            animY.KeyFrames.Add(new LinearDoubleKeyFrame(mitteY, abfahrt));
-        }
-
-        animX.Completed += (_, _) => MaterialflussTokenEntfernen(token);
-        token.BeginAnimation(Canvas.LeftProperty, animX);
-        token.BeginAnimation(Canvas.TopProperty, animY);
+        MaterialflussAnimiereZu(token, pfad[1], () => MaterialflussVerweilen(token));
     }
 
-    private void MaterialflussTokenEntfernen(Ellipse token)
+    /// <summary>Laesst das Token so lange an seiner aktuellen Station stehen, wie deren µ vorgibt, und versucht danach weiterzuziehen.</summary>
+    private void MaterialflussVerweilen(AktiverMaterialtoken token)
     {
-        ModellCanvas.Children.Remove(token);
-        _materialTokens.Remove(token);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(VerweildauerMs(token.Pfad[token.Index])) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            MaterialflussWeitergeben(token);
+        };
+        token.WarteTimer = timer;
+        timer.Start();
+    }
+
+    /// <summary>
+    /// Wird aufgerufen, sobald die Verweildauer an der aktuellen Station abgelaufen ist. Ist die
+    /// naechste Station frei, faehrt das Token dorthin (aktuelle Station wird dabei erst nach der
+    /// Fahrt freigegeben); ist sie belegt, bleibt das Token stehen (blockiert die aktuelle Station)
+    /// und prueft in kurzen Abstaenden erneut. Am Pfadende wird das Token entfernt.
+    /// </summary>
+    private void MaterialflussWeitergeben(AktiverMaterialtoken token)
+    {
+        int naechsterIndex = token.Index + 1;
+        string aktuelleStation = token.Pfad[token.Index];
+
+        if (naechsterIndex >= token.Pfad.Count)
+        {
+            _stationBelegt[aktuelleStation] = false;
+            MaterialflussTokenEntfernen(token);
+            return;
+        }
+
+        string naechsteStation = token.Pfad[naechsterIndex];
+        if (_stationBelegt.GetValueOrDefault(naechsteStation))
+        {
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(BlockierPollMs) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                MaterialflussWeitergeben(token);
+            };
+            token.WarteTimer = timer;
+            timer.Start();
+            return;
+        }
+
+        _stationBelegt[naechsteStation] = true;
+        token.Index = naechsterIndex;
+        MaterialflussAnimiereZu(token, naechsteStation, () =>
+        {
+            _stationBelegt[aktuelleStation] = false;
+            MaterialflussVerweilen(token);
+        });
+    }
+
+    private void MaterialflussAnimiereZu(AktiverMaterialtoken token, string zielStation, Action wennFertig)
+    {
+        Rect ziel = BoxRechteck(zielStation);
+        double zielX = ziel.X + ziel.Width / 2 - token.Visual.Width / 2;
+        double zielY = ziel.Y + ziel.Height / 2 - token.Visual.Height / 2;
+
+        var animX = new DoubleAnimation(zielX, TimeSpan.FromMilliseconds(UebergangsMillisekunden));
+        var animY = new DoubleAnimation(zielY, TimeSpan.FromMilliseconds(UebergangsMillisekunden));
+        animX.Completed += (_, _) => wennFertig();
+        token.Visual.BeginAnimation(Canvas.LeftProperty, animX);
+        token.Visual.BeginAnimation(Canvas.TopProperty, animY);
+    }
+
+    private void MaterialflussTokenEntfernen(AktiverMaterialtoken token)
+    {
+        token.WarteTimer?.Stop();
+        ModellCanvas.Children.Remove(token.Visual);
+        _aktiveToken.Remove(token);
     }
 
     /// <summary>Bildet den Erwartungswert (µ) einer Station rein visuell auf eine Animationsdauer ab.</summary>
