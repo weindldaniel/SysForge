@@ -9,16 +9,17 @@ namespace Anlagensimulation
     {
         public static readonly string[] Reihenfolge =
         {
-            "Quelle", "Stn 1 - Bohren", "Stn 2 - Schweißen", "Stn 3 - Fräsen", "Senke"
+            "Quelle", "Stn 1 - Messstation", "Stn 2 - Kontrastmittel", "Stn 3 - Waschanlage", "Stn 4 - Rissprüfung", "Senke"
         };
 
         public static Anlage Erstellen()
         {
             var anlage = new Anlage();
             anlage.FuegeStationHinzu("Quelle", 0.0, 0.0);
-            anlage.FuegeStationHinzu("Stn 1 - Bohren", 110.0, 4.0);
-            anlage.FuegeStationHinzu("Stn 2 - Schweißen", 110.0, 4.0);
-            anlage.FuegeStationHinzu("Stn 3 - Fräsen", 110.0, 4.0);
+            anlage.FuegeStationHinzu("Stn 1 - Messstation", 88, 2.0);
+            anlage.FuegeStationHinzu("Stn 2 - Kontrastmittel", 120, 6.0);
+            anlage.FuegeStationHinzu("Stn 3 - Waschanlage", 95, 5.0);
+            anlage.FuegeStationHinzu("Stn 4 - Rissprüfung", 105.0, 10.0);
             anlage.FuegeStationHinzu("Senke", 0.0, 0.0);
 
             for (int i = 0; i < Reihenfolge.Length - 1; i++)
@@ -42,9 +43,10 @@ namespace Anlagensimulation
             };
 
             FuelleSystemelementInfo(anlage, "Quelle", "x", "Rohbauteil");
-            FuelleSystemelementInfo(anlage, "Stn 1 - Bohren", "Rohbauteil", "gebohrtes Bauteil");
-            FuelleSystemelementInfo(anlage, "Stn 2 - Schweißen", "gebohrtes Bauteil", "geschweißtes Bauteil");
-            FuelleSystemelementInfo(anlage, "Stn 3 - Fräsen", "geschweißtes Bauteil", "gefrästes Bauteil");
+            FuelleSystemelementInfo(anlage, "Stn 1 - Messstation", "Rohbauteil", "gebohrtes Bauteil");
+            FuelleSystemelementInfo(anlage, "Stn 2 - Kontrastmittel", "gebohrtes Bauteil", "geschweißtes Bauteil");
+            FuelleSystemelementInfo(anlage, "Stn 3 - Waschanlage", "geschweißtes Bauteil", "gefrästes Bauteil");
+            FuelleSystemelementInfo(anlage, "Stn 4 - Rissprüfung", "geschweißtes Bauteil", "gefrästes Bauteil");
             FuelleSystemelementInfo(anlage, "Senke", "gefrästes Bauteil", "x");
 
             return anlage;
